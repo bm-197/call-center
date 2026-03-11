@@ -1,0 +1,6 @@
+{
+  "name": "amharic",
+  "sourceRoot": "packages/amharic/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:lib"]
+}

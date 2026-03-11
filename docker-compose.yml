@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: callcenter
+      POSTGRES_PASSWORD: callcenter
+      POSTGRES_DB: callcenter
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  asterisk:
+    image: andrius/asterisk:latest
+    restart: unless-stopped
+    ports:
+      - "5060:5060/udp"    # SIP signaling
+      - "5060:5060/tcp"    # SIP signaling
+      - "8088:8088"        # ARI HTTP
+      - "8089:8089"        # ARI HTTPS
+      - "10000-10100:10000-10100/udp"  # RTP media
+    volumes:
+      - ./docker/asterisk/config:/etc/asterisk/custom:ro
+      - asterisk_data:/var/spool/asterisk
+    environment:
+      - ASTERISK_UID=1000
+      - ASTERISK_GID=1000
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  asterisk_data:

@@ -1,0 +1,6 @@
+{
+  "name": "db",
+  "sourceRoot": "packages/db/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:lib"]
+}

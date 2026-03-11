@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": false,
+    "composite": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "esModuleInterop": true
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/db" },
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/amharic" }
+  ]
+}

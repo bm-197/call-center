@@ -1,0 +1,22 @@
+{
+  "name": "rag",
+  "sourceRoot": "apps/rag",
+  "projectType": "application",
+  "tags": ["scope:api", "type:app"],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "python -m uvicorn api:app --host 0.0.0.0 --port 4003 --reload",
+        "cwd": "apps/rag"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "python -m pytest",
+        "cwd": "apps/rag"
+      }
+    }
+  }
+}

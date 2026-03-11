@@ -1,0 +1,6 @@
+{
+  "name": "web",
+  "sourceRoot": "apps/web",
+  "projectType": "application",
+  "tags": ["scope:web", "type:app"]
+}
