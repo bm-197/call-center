@@ -1,0 +1,13 @@
+{
+  "name": "call-center-storage",
+  "r2_buckets": [
+    {
+      "binding": "RECORDINGS",
+      "bucket_name": "call-recordings"
+    },
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "kb-uploads"
+    }
+  ]
+}
