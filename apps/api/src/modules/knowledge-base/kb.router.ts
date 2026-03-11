@@ -4,17 +4,17 @@ const router = Router();
 
 router.get("/", async (_req, res) => {
   // TODO: list knowledge sources for org
-  res.json({ sources: [] });
+  res.json({ success: true, data: [] });
 });
 
 router.post("/", async (_req, res) => {
   // TODO: create knowledge source (file upload, URL, text, FAQ)
-  res.status(201).json({ source: null });
+  res.status(201).json({ success: true, data: null });
 });
 
 router.get("/:id", async (_req, res) => {
   // TODO: get knowledge source details
-  res.json({ source: null });
+  res.json({ success: true, data: null });
 });
 
 router.delete("/:id", async (_req, res) => {
@@ -24,7 +24,7 @@ router.delete("/:id", async (_req, res) => {
 
 router.post("/:id/retrain", async (_req, res) => {
   // TODO: re-process and re-embed knowledge source
-  res.json({ status: "processing" });
+  res.json({ success: true, data: { status: "processing" } });
 });
 
 export { router as knowledgeBaseRouter };

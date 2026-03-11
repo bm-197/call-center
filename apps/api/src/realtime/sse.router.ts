@@ -18,7 +18,7 @@ export function broadcast(orgId: string, event: string, data: unknown) {
 
 // SSE endpoint — clients connect here for real-time updates
 router.get("/:orgId", (req: Request<{ orgId: string }>, res: Response) => {
-  const orgId = req.params.orgId as string;
+  const { orgId } = req.params;
 
   // TODO: add auth middleware to verify user belongs to org
 
