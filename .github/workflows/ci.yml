@@ -57,7 +57,7 @@ jobs:
         run: pnpm db:generate
 
       - name: Validate Prisma schema
-        run: pnpm exec prisma validate --schema packages/db/prisma/schema.prisma
+        run: pnpm --filter @call-center/db exec prisma validate
 
       - name: Push schema to test DB
         run: pnpm db:push
