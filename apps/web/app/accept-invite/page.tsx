@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -48,6 +48,14 @@ type Phase =
   | { kind: 'accepted'; invitation: Invitation };
 
 export default function AcceptInvitePage() {
+  return (
+    <Suspense fallback={null}>
+      <AcceptInviteInner />
+    </Suspense>
+  );
+}
+
+function AcceptInviteInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { data: session, isPending: sessionPending } = useSession();
@@ -76,7 +84,7 @@ export default function AcceptInvitePage() {
           });
           return;
         }
-        const invitation = data as Invitation;
+        const invitation = data as unknown as Invitation;
         if (invitation.status === 'accepted') {
           setPhase({ kind: 'already-accepted', invitation });
           return;
