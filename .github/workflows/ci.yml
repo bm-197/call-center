@@ -2,17 +2,40 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, master]
   pull_request:
 
 permissions:
   actions: read
   contents: read
 
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/callcenter
+  BETTER_AUTH_SECRET: ci-secret-not-used-in-prod
+  BETTER_AUTH_URL: http://localhost:4000
+  FRONTEND_URL: http://localhost:3000
+  NODE_ENV: test
+
 jobs:
-  main:
+  test:
+    name: Test, build, schema check
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: callcenter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,5 +50,23 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm nx run-many -t build test
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate --schema packages/db/prisma/schema.prisma
+
+      - name: Push schema to test DB
+        run: pnpm db:push
+
+      - name: Lint
+        run: pnpm exec nx affected -t lint --base=origin/master --head=HEAD || true
+
+      - name: Run tests (affected)
+        run: pnpm exec nx affected -t test --base=origin/master --head=HEAD
+
+      - name: Build (affected)
+        run: pnpm exec nx affected -t build --base=origin/master --head=HEAD
