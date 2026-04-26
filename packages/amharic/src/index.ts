@@ -1,2 +1,6 @@
-export { normalizeAmharic, isAmharicText, detectLanguage } from "./normalize";
-export { splitAmharicSentences } from "./chunker";
+export {
+  normalizeAmharic,
+  isAmharicText,
+  detectLanguage,
+} from './normalize.js';
+export { splitAmharicSentences } from './chunker.js';
