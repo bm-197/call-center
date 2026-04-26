@@ -2,8 +2,31 @@
   "name": "@call-center/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
   "private": true,
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "infra:reset": "docker compose down -v && docker compose up -d",
+
+    "dev": "pnpm infra:up && nx run-many --target=dev --projects=api,web,rag --parallel=3",
+    "dev:api": "nx dev api",
+    "dev:web": "nx dev web",
+    "dev:rag": "nx dev rag",
+
+    "build": "nx run-many --target=build --all",
+    "test": "nx run-many --target=test --all",
+    "lint": "nx run-many --target=lint --all",
+
+    "db:generate": "nx run @call-center/db:db:generate",
+    "db:push": "nx run @call-center/db:db:push",
+    "db:migrate": "nx run @call-center/db:db:migrate",
+    "db:studio": "nx run @call-center/db:db:studio",
+    "db:seed": "nx run @call-center/db:db:seed",
+
+    "graph": "nx graph",
+    "format": "prettier --write ."
+  },
   "dependencies": {},
   "devDependencies": {
     "@nx/js": "22.5.4",
