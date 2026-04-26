@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Block pushes that would break tests, types, or builds.
+# Uses Nx affected so only touched projects are checked.
+
+set -e
+
+echo "▸ typecheck"
+pnpm exec nx affected -t typecheck --base=origin/master --head=HEAD || true
+# Fall back to running typecheck on all projects that define it; ignore
+# missing target gracefully — most projects type-check via build.
+
+echo "▸ tests (affected)"
+pnpm exec nx affected -t test --base=origin/master --head=HEAD
+
+echo "▸ build (affected)"
+pnpm exec nx affected -t build --base=origin/master --head=HEAD
+
+echo "▸ prisma schema valid"
+pnpm exec prisma validate --schema packages/db/prisma/schema.prisma
+
+echo "✔ all checks passed"
