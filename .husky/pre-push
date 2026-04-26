@@ -16,6 +16,6 @@ echo "▸ build (affected)"
 pnpm exec nx affected -t build --base=origin/master --head=HEAD
 
 echo "▸ prisma schema valid"
-pnpm exec prisma validate --schema packages/db/prisma/schema.prisma
+pnpm --filter @call-center/db exec prisma validate
 
 echo "✔ all checks passed"
