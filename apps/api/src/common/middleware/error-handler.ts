@@ -1,4 +1,5 @@
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 
 export class AppError extends Error {
   constructor(
@@ -17,15 +18,22 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      error: err.message,
+  if (err instanceof ZodError) {
+    res.status(400).json({
+      error: 'Invalid request body',
+      issues: err.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      })),
     });
     return;
   }
 
-  console.error("Unhandled error:", err);
-  res.status(500).json({
-    error: "Internal server error",
-  });
+  if (err instanceof AppError) {
+    res.status(err.statusCode).json({ error: err.message });
+    return;
+  }
+
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 }

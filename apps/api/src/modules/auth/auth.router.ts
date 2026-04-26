@@ -1,13 +1,12 @@
-import { Router } from "express";
+import { Router } from 'express';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth.js';
 
 const router = Router();
 
-// Better Auth handles these routes — see apps/api/src/modules/auth/auth.ts
-// This router is a passthrough to Better Auth's handler
-
-router.all("/*splat", (req, res) => {
-  // TODO: wire up Better Auth handler
-  res.status(501).json({ error: "Auth not yet configured" });
-});
+// Better Auth handles all /api/auth/* routes (sign-in, sign-up, sessions,
+// organization plugin endpoints, etc.). Must be mounted BEFORE express.json()
+// so it can read the raw body.
+router.all('/*splat', toNodeHandler(auth));
 
 export { router as authRouter };

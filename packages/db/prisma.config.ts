@@ -1,14 +1,17 @@
-import path from "node:path";
-import { defineConfig } from "prisma/config";
-import "dotenv/config";
+import path from 'node:path';
+import { defineConfig } from 'prisma/config';
+import 'dotenv/config';
 
 export default defineConfig({
   earlyAccess: true,
-  schema: path.join(__dirname, "prisma", "schema.prisma"),
+  schema: path.join(__dirname, 'prisma', 'schema.prisma'),
+  datasource: {
+    url: process.env.DATABASE_URL!,
+  },
   migrate: {
     async seed() {
-      const { execSync } = await import("node:child_process");
-      execSync("tsx src/seed.ts", { stdio: "inherit" });
+      const { execSync } = await import('node:child_process');
+      execSync('tsx src/seed.ts', { stdio: 'inherit' });
     },
   },
 });

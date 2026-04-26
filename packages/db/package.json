@@ -13,14 +13,14 @@
     "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^7.4.2",
-    "@prisma/adapter-pg": "^7.4.2",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "pg": "^8.16.0"
   },
   "devDependencies": {
-    "prisma": "^7.4.2",
-    "tsx": "^4.21.0",
+    "@types/pg": "^8.15.4",
     "dotenv": "^16.5.0",
-    "@types/pg": "^8.15.4"
+    "prisma": "^7.8.0",
+    "tsx": "^4.21.0"
   }
 }
