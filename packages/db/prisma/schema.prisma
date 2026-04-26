@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
@@ -19,40 +20,50 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions Session[]
-  accounts Account[]
-  members  Member[]
+  sessions    Session[]
+  accounts    Account[]
+  members     Member[]
+  invitations Invitation[]
+
+  @@map("user")
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  userId               String
+  token                String   @unique
+  expiresAt            DateTime
+  ipAddress            String?
+  userAgent            String?
+  activeOrganizationId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
 }
 
 model Account {
-  id                String    @id @default(cuid())
-  userId            String
-  accountId         String
-  providerId        String
-  accessToken       String?
-  refreshToken      String?
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope             String?
-  idToken           String?
-  password          String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
 }
 
 model Verification {
@@ -62,6 +73,9 @@ model Verification {
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
 
 // ─── Organization (Better Auth org plugin) ───
@@ -82,6 +96,8 @@ model Organization {
   knowledgeSources KnowledgeSource[]
   phoneNumbers     PhoneNumber[]
   invitations      Invitation[]
+
+  @@map("organization")
 }
 
 model Member {
@@ -96,6 +112,9 @@ model Member {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
 }
 
 model Invitation {
@@ -110,17 +129,22 @@ model Invitation {
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
 }
 
 // ─── AI Agents ───
 
 model Agent {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   name           String
   description    String?
-  language       String   @default("am") // am, en, am+en
-  status         String   @default("draft") // draft, active, paused
+  language       String  @default("am") // am, en, am+en
+  status         String  @default("draft") // draft, active, paused
 
   // AI Configuration
   systemPrompt String @default("")
@@ -133,10 +157,10 @@ model Agent {
   ttsVoice    String @default("am-ET-Wavenet-A")
 
   // Handoff Configuration
-  handoffEnabled         Boolean @default(true)
-  handoffConfidenceThreshold Float @default(0.3)
-  handoffMaxFailedAttempts   Int   @default(3)
-  handoffMessage         String  @default("እባክዎ ይጠብቁ፣ ወደ ወኪላችን እያስተላለፍዎት ነው።")
+  handoffEnabled             Boolean @default(true)
+  handoffConfidenceThreshold Float   @default(0.3)
+  handoffMaxFailedAttempts   Int     @default(3)
+  handoffMessage             String  @default("እባክዎ ይጠብቁ፣ ወደ ወኪላችን እያስተላለፍዎት ነው።")
 
   // Workflow (nodes + edges for orchestration canvas)
   workflow Json?
@@ -148,12 +172,15 @@ model Agent {
   calls            Call[]
   knowledgeSources KnowledgeSource[]
   phoneNumbers     PhoneNumber[]
+
+  @@index([organizationId])
+  @@map("agent")
 }
 
 // ─── Calls ───
 
 model Call {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   agentId        String
   contactId      String?
@@ -163,35 +190,40 @@ model Call {
   callerNumber String
   calleeNumber String
   status       String @default("ringing") // ringing, in_progress, ai_handling, queued, human_handling, completed, failed, missed
-  duration     Int?   // seconds
+  duration     Int? // seconds
 
   // Handoff
-  handedOff       Boolean  @default(false)
-  handoffReason   String?
-  humanAgentId    String?  // Member ID of human who picked up
-  handoffTime     DateTime?
+  handedOff     Boolean   @default(false)
+  handoffReason String?
+  humanAgentId  String? // Member ID of human who picked up
+  handoffTime   DateTime?
 
   // Recordings & Transcripts
-  recordingUrl    String?
+  recordingUrl      String?
   recordingDuration Int?
-  transcriptAm    Json?    // Array of {speaker, text, timestamp}
-  transcriptEn    Json?    // Auto-translated English version
-  summary         String?
-  summaryEn       String?
-  sentiment       Float?   // -1 to 1
+  transcriptAm      Json? // Array of {speaker, text, timestamp}
+  transcriptEn      Json? // Auto-translated English version
+  summary           String?
+  summaryEn         String?
+  sentiment         Float? // -1 to 1
 
   // Metadata
-  collectedInfo Json?   // Key-value data collected during call
-  creditsUsed   Float   @default(0)
+  collectedInfo Json? // Key-value data collected during call
+  creditsUsed   Float @default(0)
 
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
   contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([contactId])
+  @@map("call")
 }
 
 // ─── Contacts ───
@@ -213,29 +245,31 @@ model Contact {
   calls        Call[]
 
   @@unique([organizationId, phoneNumber])
+  @@index([organizationId])
+  @@map("contact")
 }
 
 // ─── Knowledge Base ───
 
 model KnowledgeSource {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   agentId        String?
   name           String
   description    String?
-  language       String   @default("am") // am, en
-  sourceType     String   // file, url, text, faq
-  sourceUrl      String?  // for url type
-  sourceContent  String?  // for text/faq type
-  fileUrl        String?  // R2/MinIO URL for uploaded files
+  language       String  @default("am") // am, en
+  sourceType     String // file, url, text, faq
+  sourceUrl      String? // for url type
+  sourceContent  String? // for text/faq type
+  fileUrl        String? // R2/MinIO URL for uploaded files
   fileName       String?
   fileSize       Int?
 
   // Processing status
-  status      String @default("pending") // pending, processing, completed, failed
+  status       String  @default("pending") // pending, processing, completed, failed
   errorMessage String?
-  chunkCount  Int    @default(0)
-  tokenCount  Int    @default(0)
+  chunkCount   Int     @default(0)
+  tokenCount   Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -243,13 +277,17 @@ model KnowledgeSource {
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent?           @relation(fields: [agentId], references: [id], onDelete: SetNull)
   chunks       KnowledgeChunk[]
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@map("knowledge_source")
 }
 
 model KnowledgeChunk {
   id       String @id @default(cuid())
   sourceId String
   content  String
-  metadata Json?  // page number, section, etc.
+  metadata Json? // page number, section, etc.
 
   // pgvector — 1024 dimensions for multilingual-e5-large
   embedding Unsupported("vector(1024)")?
@@ -259,23 +297,28 @@ model KnowledgeChunk {
   source KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@index([sourceId])
+  @@map("knowledge_chunk")
 }
 
 // ─── Phone Numbers ───
 
 model PhoneNumber {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   agentId        String?
-  number         String   @unique // +251...
+  number         String  @unique // +251...
   friendlyName   String?
-  provider       String   @default("ethiotelecom") // ethiotelecom, twilio
-  capabilities   Json?    // {voice: true, sms: true}
-  status         String   @default("active") // active, inactive
+  provider       String  @default("ethiotelecom") // ethiotelecom, twilio
+  capabilities   Json? // {voice: true, sms: true}
+  status         String  @default("active") // active, inactive
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@map("phone_number")
 }

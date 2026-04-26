@@ -1,13 +1,15 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import { Geist_Mono } from "next/font/google";
-import { cn } from "@/lib/utils";
+import type { Metadata } from 'next';
+import './globals.css';
+import { Geist_Mono } from 'next/font/google';
+import { cn } from '@/lib/utils';
+import { Toaster } from '@/components/ui/sonner';
+import { Providers } from './providers';
 
-const geistMono = Geist_Mono({subsets:['latin'],variable:'--font-mono'});
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: "Call Center — Amharic AI Call Center",
-  description: "Amharic-based AI call center SaaS for Ethiopian organizations",
+  title: 'Call Center — Amharic AI Call Center',
+  description: 'Amharic-based AI call center SaaS for Ethiopian organizations',
 };
 
 export default function RootLayout({
@@ -16,8 +18,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="am" className={cn("font-mono", geistMono.variable)}>
-      <body>{children}</body>
+    <html lang="am" className={cn('font-mono', geistMono.variable)}>
+      <body>
+        <Providers>{children}</Providers>
+        <Toaster richColors position="top-right" />
+      </body>
     </html>
   );
 }
