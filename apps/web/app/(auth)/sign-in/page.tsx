@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -18,6 +18,14 @@ import {
 } from '@/components/ui/card';
 
 export default function SignInPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
   const redirectTo = params.get('redirect');

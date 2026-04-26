@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@call-center/db';
+import { prisma, Prisma } from '@call-center/db';
 import {
   requireAuth,
   requireOrgMember,
@@ -55,8 +55,13 @@ router.post('/', async (req, res, next) => {
       if (!owns)
         throw new AppError(400, 'Agent not found in this organization');
     }
+    const createData: Prisma.PhoneNumberUncheckedCreateInput = {
+      ...data,
+      capabilities: data.capabilities ?? Prisma.JsonNull,
+      organizationId: req.activeOrganizationId!,
+    };
     const number = await prisma.phoneNumber.create({
-      data: { ...data, organizationId: req.activeOrganizationId! },
+      data: createData,
       include: { agent: { select: { id: true, name: true } } },
     });
     res.status(201).json(number);
@@ -90,9 +95,17 @@ router.patch('/:id', async (req, res, next) => {
       if (!owns)
         throw new AppError(400, 'Agent not found in this organization');
     }
+    const cleaned = stripUndefined(data);
+    const { capabilities, ...rest } = cleaned;
+    const updateData: Prisma.PhoneNumberUncheckedUpdateInput = {
+      ...rest,
+      ...('capabilities' in cleaned && {
+        capabilities: capabilities ?? Prisma.JsonNull,
+      }),
+    };
     const number = await prisma.phoneNumber.update({
       where: { id: req.params.id },
-      data: stripUndefined(data),
+      data: updateData,
       include: { agent: { select: { id: true, name: true } } },
     });
     res.json(number);
