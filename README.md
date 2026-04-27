@@ -39,8 +39,6 @@ docker/
 | Frontend state  | **Zustand** (UI), **TanStack Query** (server state)                                        |
 | Email           | **Resend** (transactional / invitations)                                                   |
 
-See `CLAUDE.md` for the full constraint list and version pins.
-
 ---
 
 ## Prerequisites
