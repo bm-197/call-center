@@ -237,14 +237,6 @@ service container.
 
 ---
 
-## Reference
-
-The sibling `Intervo/` directory (not a workspace member) is an open-source
-voice/chat agent platform we use as an architectural reference for the AI
-pipeline and ARI handler shape. Don't copy code wholesale — their codebase
-uses Twilio in places, which we deliberately avoid.
-
----
 
 ## Contributing
 
