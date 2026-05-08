@@ -4,7 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.115.12",
+    "numpy",
+    "pgvector",
+    "psycopg2-binary",
     "python-multipart>=0.0.26",
+    "sentence-transformers",
     "uvicorn[standard]==0.34.2",
 ]
 

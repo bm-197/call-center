@@ -19,6 +19,11 @@ import { errorHandler } from './common/middleware/error-handler.js';
 export function createApp() {
   const app = express();
 
+  // Trust the Next.js proxy.ts in front of the API so X-Forwarded-For
+  // resolves to the real client IP. `1` means "exactly one hop" — safer
+  // than `true`, which would trust spoofed headers from anyone.
+  app.set('trust proxy', 1);
+
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 500,

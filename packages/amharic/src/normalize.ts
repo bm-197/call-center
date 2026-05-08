@@ -1,39 +1,77 @@
 /**
- * Amharic text normalization utilities.
+ * Amharic text normalization for consistent retrieval and matching.
  *
- * Handles common Fidel (ፊደል) script variations and normalizations
- * needed for consistent text processing.
+ * Fidel (ፊደል) has many homophonic variants — characters that sound the
+ * same but have different code points (historical / Ge'ez origins). For
+ * search, embeddings, and equality checks we collapse them to a canonical
+ * form. Display text should keep the original.
  */
 
-// Amharic Unicode range: U+1200 to U+137F (Ethiopic block)
-const AMHARIC_RANGE = /[\u1200-\u137F]/;
+const AMHARIC_RANGE = /[ሀ-፿]/;
+const ENGLISH_LETTER = /[A-Za-z]/;
 
-// Common character normalizations (variant forms → canonical)
-const NORMALIZATIONS: Record<string, string> = {
-  "\u1205": "\u1205", // ህ
-  "\u1285": "\u1205", // ኅ → ህ (normalize variant)
-  "\u1245": "\u1245", // ቅ
-  "\u12D5": "\u12D5", // እ
+// Homophonic Fidel collapses. Keys are variant forms; values are the
+// canonical form we keep. Sourced from common Amharic NLP normalization
+// tables (HornMorpho, Amharic-Stemmer, etc.).
+//
+// We collapse the four "h" series to ሀ family, the two "s" series to ሰ,
+// the two "a" series to አ, and the two "ts" series to ጸ.
+const FIDEL_NORMALIZATIONS: Record<string, string> = {
+  // h-series: ሐ ኀ → ሀ
+  ሐ: 'ሀ',
+  ሑ: 'ሁ',
+  ሒ: 'ሂ',
+  ሓ: 'ሃ',
+  ሔ: 'ሄ',
+  ሕ: 'ህ',
+  ሖ: 'ሆ',
+  ኀ: 'ሀ',
+  ኁ: 'ሁ',
+  ኂ: 'ሂ',
+  ኃ: 'ሃ',
+  ኄ: 'ሄ',
+  ኅ: 'ህ',
+  ኆ: 'ሆ',
+  // s-series: ሠ → ሰ
+  ሠ: 'ሰ',
+  ሡ: 'ሱ',
+  ሢ: 'ሲ',
+  ሣ: 'ሳ',
+  ሤ: 'ሴ',
+  ሥ: 'ስ',
+  ሦ: 'ሶ',
+  // a-series: ዐ → አ
+  ዐ: 'አ',
+  ዑ: 'ኡ',
+  ዒ: 'ኢ',
+  ዓ: 'አ',
+  ዔ: 'ኤ',
+  ዕ: 'እ',
+  ዖ: 'ኦ',
+  // ts-series: ፀ → ጸ
+  ፀ: 'ጸ',
+  ፁ: 'ጹ',
+  ፂ: 'ጺ',
+  ፃ: 'ጻ',
+  ፄ: 'ጼ',
+  ፅ: 'ጽ',
+  ፆ: 'ጾ',
 };
 
 /**
  * Normalize Amharic text for consistent processing.
- * - Removes excessive whitespace
- * - Normalizes variant Fidel characters
- * - Trims
+ *
+ * - Trims and collapses whitespace
+ * - Replaces homophonic Fidel variants with their canonical form
+ * - Leaves Latin / digits / punctuation untouched (we keep mixed text intact)
+ *
+ * Use this before embedding, indexing, or equality comparison. Don't use
+ * it on text you'll display to users — original spelling matters there.
  */
 export function normalizeAmharic(text: string): string {
-  let normalized = text.trim();
-
-  // Normalize whitespace
-  normalized = normalized.replace(/\s+/g, " ");
-
-  // Apply character normalizations
-  for (const [from, to] of Object.entries(NORMALIZATIONS)) {
-    normalized = normalized.replaceAll(from, to);
-  }
-
-  return normalized;
+  let out = text.trim().replace(/\s+/g, ' ');
+  out = out.replace(/[ሀ-፿]/g, (ch) => FIDEL_NORMALIZATIONS[ch] ?? ch);
+  return out;
 }
 
 /**
@@ -44,17 +82,19 @@ export function isAmharicText(text: string): boolean {
 }
 
 /**
- * Detect the primary language of the text.
- * Simple heuristic based on character ranges.
+ * Detect the primary language of the text by letter-character ratios.
+ * Whitespace, digits, and punctuation are excluded from the count.
  */
-export function detectLanguage(text: string): "am" | "en" | "mixed" {
-  const chars = [...text.replace(/\s/g, "")];
-  if (chars.length === 0) return "en";
+export function detectLanguage(text: string): 'am' | 'en' | 'mixed' {
+  const letters = [...text].filter(
+    (c) => AMHARIC_RANGE.test(c) || ENGLISH_LETTER.test(c),
+  );
+  if (letters.length === 0) return 'en';
 
-  const amharicCount = chars.filter((c) => AMHARIC_RANGE.test(c)).length;
-  const ratio = amharicCount / chars.length;
+  const amharicCount = letters.filter((c) => AMHARIC_RANGE.test(c)).length;
+  const ratio = amharicCount / letters.length;
 
-  if (ratio > 0.7) return "am";
-  if (ratio < 0.1) return "en";
-  return "mixed";
+  if (ratio > 0.7) return 'am';
+  if (ratio < 0.1) return 'en';
+  return 'mixed';
 }
