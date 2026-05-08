@@ -43,6 +43,26 @@ const ORG_SCOPED_ENDPOINTS: Endpoint[] = [
     body: { status: 'inactive' },
   },
   { method: 'delete', path: '/api/phone-numbers/some-id' },
+
+  { method: 'get', path: '/api/calls' },
+  { method: 'get', path: '/api/calls/stats' },
+  { method: 'get', path: '/api/calls/some-id' },
+  { method: 'get', path: '/api/calls/some-id/recording' },
+
+  { method: 'get', path: '/api/knowledge-base' },
+  {
+    method: 'post',
+    path: '/api/knowledge-base',
+    body: { name: 'x', sourceContent: 'y' },
+  },
+  { method: 'get', path: '/api/knowledge-base/some-id' },
+  {
+    method: 'patch',
+    path: '/api/knowledge-base/some-id',
+    body: { name: 'y' },
+  },
+  { method: 'post', path: '/api/knowledge-base/some-id/reindex' },
+  { method: 'delete', path: '/api/knowledge-base/some-id' },
 ];
 
 describe('auth gate: protected routes reject unauthenticated requests', () => {

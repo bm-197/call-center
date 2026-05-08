@@ -3,4 +3,10 @@ export {
   isAmharicText,
   detectLanguage,
 } from './normalize.js';
-export { splitAmharicSentences } from './chunker.js';
+export {
+  splitSentences,
+  splitAmharicSentences,
+  chunkText,
+  type Chunk,
+  type ChunkOptions,
+} from './chunker.js';

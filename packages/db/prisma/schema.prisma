@@ -289,8 +289,9 @@ model KnowledgeChunk {
   content  String
   metadata Json? // page number, section, etc.
 
-  // pgvector — 1024 dimensions for multilingual-e5-large
-  embedding Unsupported("vector(1024)")?
+  // pgvector — 1024 dimensions for multilingual-e5-large.
+  // Stored as halfvec for ~50% smaller storage with minimal recall loss.
+  embedding Unsupported("halfvec(1024)")?
 
   createdAt DateTime @default(now())
 

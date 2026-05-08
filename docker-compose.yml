@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - '5432:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -15,21 +15,27 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
 
   asterisk:
     image: andrius/asterisk:latest
     restart: unless-stopped
-    ports:
-      - "5060:5060/udp"    # SIP signaling
-      - "5060:5060/tcp"    # SIP signaling
-      - "8088:8088"        # ARI HTTP
-      - "8089:8089"        # ARI HTTPS
-      - "10000-10100:10000-10100/udp"  # RTP media
+    # Host networking required for bidirectional UDP (RTP). Works on:
+    #   - Linux (real host network mode)
+    #   - OrbStack on Mac (drop-in replacement for Docker Desktop)
+    # Does NOT work reliably on Docker Desktop for Mac — its "host
+    # networking" toggle is an L4 proxy, not true host mode, and breaks
+    # raw-socket apps like Asterisk RTP. See docker/for-mac#7717.
+    network_mode: host
     volumes:
-      - ./docker/asterisk/config:/etc/asterisk/custom:ro
+      # Bind each config file directly into /etc/asterisk so Asterisk loads
+      # our custom values (mounting the whole directory replaces all defaults).
+      - ./docker/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./docker/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./docker/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./docker/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
       - asterisk_data:/var/spool/asterisk
     environment:
       - ASTERISK_UID=1000
