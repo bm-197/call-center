@@ -48,8 +48,6 @@ Thumbs.db
 .github/instructions/nx.instructions.md
 
 # Environment
-.env
-.env.local
 google-credentials.json
 
 # Next.js
@@ -71,3 +69,4 @@ __pycache__
 
 # Prisma generated client (regenerate with `pnpm db:generate`)
 packages/db/src/generated
+config.bat
