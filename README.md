@@ -237,6 +237,109 @@ service container.
 
 ---
 
+## Deploying to a VPS
+
+Single-command deploy with `docker compose`. Everything (Postgres, Redis,
+RAG, API, web, Asterisk) runs in containers; nothing on the host except
+Docker and your firewall.
+
+### One-time host setup
+
+```bash
+# Install Docker (Ubuntu / Debian — adjust for your distro)
+curl -fsSL https://get.docker.com | sh
+
+# Open the ports the stack needs
+sudo ufw allow 22/tcp                 # ssh
+sudo ufw allow 3000/tcp               # web dashboard
+sudo ufw allow 4000/tcp               # api
+sudo ufw allow 5060/udp               # SIP
+sudo ufw allow 10000:20000/udp        # RTP media
+sudo ufw enable
+# Postgres (5432), Redis (6379), RAG (4003), and ARI (8088) stay closed —
+# they're only bound to 127.0.0.1 inside the host.
+```
+
+Public-facing SIP gets brute-forced within hours of going up. Strongly
+recommended: install **fail2ban** and enable the standard `asterisk`
+filter so repeat offenders get IP-banned automatically. Asterisk's
+`/var/log/asterisk/messages` is the log fail2ban will tail.
+
+### Deploy
+
+```bash
+git clone <this-repo> && cd call-center
+cp .env.production.example .env.production
+$EDITOR .env.production    # fill every "required" var
+
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+The `migrate` service runs `prisma migrate deploy` once and exits; api and
+web start only after migrations succeed. First build takes 10–20 min on a
+cold VPS — most of that is the RAG image baking the e5-large embedding
+model (~2 GB) so cold starts are instant afterwards.
+
+**Memory note:** the build pipeline (Next.js + sentence-transformers
+download) needs ~3 GB free. On a 2 GB VPS you'll need swap; 4 GB+ is
+comfortable.
+
+### Update / redeploy
+
+```bash
+git pull
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+### Connect a softphone
+
+Same flow as dev — register a softphone against the VPS instead of
+Tailscale:
+
+| Field     | Value                                            |
+| --------- | ------------------------------------------------ |
+| Server    | `<VPS_PUBLIC_IP>`                                |
+| Port      | `5060` (UDP)                                     |
+| Username  | `1001`, `1002`, or `2001`                        |
+| Password  | matching `EXT_*_PASSWORD` from `.env.production` |
+| Transport | UDP                                              |
+
+Tested with Linphone (Android / iOS) and Telephone.app (macOS). Dial any
+number — Asterisk routes everything through the `call-center` Stasis app
+and the AI agent picks up.
+
+### Service layout
+
+| Service    | Port (host)                | Network         | Notes                                  |
+| ---------- | -------------------------- | --------------- | -------------------------------------- |
+| `web`      | `3000` (public)            | bridge          | Dashboard, proxies `/api/*` to api     |
+| `api`      | `4000` (public)            | host networking | Reaches Asterisk ARI on 127.0.0.1:8088 |
+| `rag`      | `127.0.0.1:4003`           | bridge          | Embedding + retrieval, internal only   |
+| `postgres` | `127.0.0.1:5432`           | bridge          | Persistent volume                      |
+| `redis`    | `127.0.0.1:6379`           | bridge          | Persistent volume                      |
+| `migrate`  | one-shot                   | bridge          | Runs `prisma migrate deploy` and exits |
+| `asterisk` | 5060/udp + 10000-20000/udp | host networking | ARI on 127.0.0.1:8088 (loopback only)  |
+
+### Updating Asterisk endpoint passwords
+
+Edit `EXT_*_PASSWORD` / `ARI_PASSWORD` in `.env.production` and restart
+just the asterisk service — the entrypoint re-renders `pjsip.conf` /
+`ari.conf` from templates on every boot:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d asterisk
+```
+
+### Reset everything (nuclear option)
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production down -v
+```
+
+`-v` drops the postgres / redis / asterisk volumes too. **Destroys all
+data.** Don't run this on a real deployment unless you mean it.
+
+---
 
 ## Contributing
 

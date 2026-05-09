@@ -1,0 +1,100 @@
+; Production pjsip.conf — rendered from this template by the entrypoint
+; via envsubst. DO NOT mount this file as pjsip.conf; mount it as
+; pjsip.conf.template and the entrypoint will produce pjsip.conf at boot.
+;
+; Env vars consumed:
+;   ASTERISK_PUBLIC_IP       VPS public IPv4 (set in .env.production)
+;   EXT_1001_PASSWORD        SIP secret for softphone 1001
+;   EXT_1002_PASSWORD        SIP secret for softphone 1002
+;   EXT_2001_PASSWORD        SIP secret for the human-agent WebRTC endpoint
+
+; ─── Transport ───
+[transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0:5060
+; Public-facing addresses advertised in SDP / Contact headers so far-end
+; phones send RTP and signaling to the right place.
+external_media_address = ${ASTERISK_PUBLIC_IP}
+external_signaling_address = ${ASTERISK_PUBLIC_IP}
+; RFC1918 only — public IPs are *not* "local", so external_*_address is
+; applied to all real callers from the internet.
+local_net = 10.0.0.0/8
+local_net = 172.16.0.0/12
+local_net = 192.168.0.0/16
+
+; ─── Softphone endpoints ───
+; Section names MUST match the SIP URI user portion (sip:1001@host).
+
+;
+; Extension 1001
+;
+[1001]
+type = endpoint
+context = call-center
+disallow = all
+allow = ulaw
+allow = alaw
+auth = 1001
+aors = 1001
+direct_media = no
+
+[1001]
+type = auth
+auth_type = userpass
+username = 1001
+password = ${EXT_1001_PASSWORD}
+
+[1001]
+type = aor
+max_contacts = 1
+remove_existing = yes
+
+;
+; Extension 1002
+;
+[1002]
+type = endpoint
+context = call-center
+disallow = all
+allow = ulaw
+allow = alaw
+auth = 1002
+aors = 1002
+direct_media = no
+
+[1002]
+type = auth
+auth_type = userpass
+username = 1002
+password = ${EXT_1002_PASSWORD}
+
+[1002]
+type = aor
+max_contacts = 1
+remove_existing = yes
+
+;
+; Extension 2001 — human agent (WebRTC)
+;
+[2001]
+type = endpoint
+context = call-center
+disallow = all
+allow = ulaw
+allow = alaw
+auth = 2001
+aors = 2001
+direct_media = no
+webrtc = yes
+
+[2001]
+type = auth
+auth_type = userpass
+username = 2001
+password = ${EXT_2001_PASSWORD}
+
+[2001]
+type = aor
+max_contacts = 1
+remove_existing = yes

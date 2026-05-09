@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import path from 'node:path';
 
 const nextConfig: NextConfig = {
   // cacheComponents disabled: most dashboard pages are per-user dynamic data,
@@ -6,6 +7,8 @@ const nextConfig: NextConfig = {
   // public/marketing routes when added, using `'use cache'` directives.
   cacheComponents: false,
   reactCompiler: true,
+  output: 'standalone',
+  outputFileTracingRoot: path.join(__dirname, '../../'),
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },

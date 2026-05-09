@@ -3,13 +3,13 @@
   "exclude": ["**/*.spec.ts", "**/*.test.ts"],
   "references": [
     {
-      "path": "../../packages/shared"
+      "path": "../../packages/shared/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/db"
+      "path": "../../packages/db/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/amharic"
+      "path": "../../packages/amharic/tsconfig.lib.json"
     }
   ]
 }

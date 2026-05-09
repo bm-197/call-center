@@ -1,0 +1,13 @@
+; Production ari.conf — rendered from this template by entrypoint.sh.
+; The ARI password is taken from .env.production (ARI_PASSWORD), and the
+; api service uses the matching ARI_PASSWORD for its REST + WebSocket auth.
+
+[general]
+enabled = yes
+pretty = yes
+allowed_origins = *
+
+[callcenter]
+type = user
+read_only = no
+password = ${ARI_PASSWORD}

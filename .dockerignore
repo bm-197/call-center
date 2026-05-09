@@ -1,0 +1,45 @@
+# Build-context exclusions for all Dockerfiles in this repo.
+# Build context is the monorepo root for api, web, and rag images.
+
+# Dependencies
+**/node_modules
+
+# Build outputs (regenerated inside the container)
+**/.next
+**/.nx
+**/dist
+**/.turbo
+**/.cache
+**/coverage
+apps/web/.next
+apps/api/dist
+packages/*/dist
+packages/db/src/generated
+
+# Local secrets — never bake these into images.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.production.example
+
+# Git + tooling
+.git
+.github
+.husky
+.vscode
+.claude
+.prettierignore
+.prettierrc
+
+# Logs / OS junk
+**/.DS_Store
+**/*.log
+**/.pytest_cache
+**/.venv
+**/__pycache__
+
+# Docker / compose files don't belong in image layers
+docker-compose*.yml
+Dockerfile
+**/Dockerfile
+**/.dockerignore
