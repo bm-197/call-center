@@ -31,12 +31,8 @@ COPY packages/db/package.json packages/db/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ─── 3. build (compiles workspace deps + next build) ───────────────────────
 FROM deps AS build
 COPY . .
-# Build the workspace JS that web consumes (just shared today, but db/amharic
-# are cheap and may be imported as the dashboard grows).
-RUN pnpm nx run-many -t build -p shared db amharic
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm nx build web
 
