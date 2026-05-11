@@ -71,6 +71,5 @@ FROM base AS migrate
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=migrate-deploy /prod/db ./
-# Run as root so the engine can write its tmp files; this is a short-lived
-# one-shot container, not a long-running service.
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"]
+
+CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
