@@ -38,6 +38,16 @@ allow = alaw
 auth = 1001
 aors = 1001
 direct_media = no
+; NAT traversal — mobile / cellular Linphone is behind CGNAT, so the
+; address it advertises in SDP / Contact is unreachable. These three
+; settings tell Asterisk to send RTP back to the actual source IP:port
+; the packets came from, and to use the source of SIP signaling as the
+; reply target. Without them, audio flows AI -> caller but never the
+; other way, the STT stream sees no bytes, and the call dies at the
+; media-timeout horizon (~60s) with a 408 on the phone.
+rtp_symmetric = yes
+force_rport = yes
+rewrite_contact = yes
 
 [1001]
 type = auth
@@ -62,6 +72,9 @@ allow = alaw
 auth = 1002
 aors = 1002
 direct_media = no
+rtp_symmetric = yes
+force_rport = yes
+rewrite_contact = yes
 
 [1002]
 type = auth
@@ -87,6 +100,9 @@ auth = 2001
 aors = 2001
 direct_media = no
 webrtc = yes
+rtp_symmetric = yes
+force_rport = yes
+rewrite_contact = yes
 
 [2001]
 type = auth

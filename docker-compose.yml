@@ -209,6 +209,7 @@ services:
       - ./docker/asterisk/config/ari.prod.conf.template:/etc/asterisk/ari.conf.template:ro
       - ./docker/asterisk/config/http.prod.conf:/etc/asterisk/http.conf:ro
       - ./docker/asterisk/config/extensions.prod.conf:/etc/asterisk/extensions.conf:ro
+      - ./docker/asterisk/config/rtp.prod.conf:/etc/asterisk/rtp.conf:ro
       - asterisk_data:/var/spool/asterisk
 
 volumes:
