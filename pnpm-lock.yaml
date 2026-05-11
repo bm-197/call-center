@@ -91,6 +91,9 @@ importers:
       cors:
         specifier: ^2.8.6
         version: 2.8.6
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -140,9 +143,6 @@ importers:
       '@types/supertest':
         specifier: ^7.2.0
         version: 7.2.0
-      dotenv:
-        specifier: ^16.6.1
-        version: 16.6.1
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
