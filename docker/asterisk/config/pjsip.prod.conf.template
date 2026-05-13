@@ -8,17 +8,34 @@
 ;   EXT_1002_PASSWORD        SIP secret for softphone 1002
 ;   EXT_2001_PASSWORD        SIP secret for the human-agent WebRTC endpoint
 
-; ─── Transport ───
+; ─── Transports ───
+;
+; Two transports are exposed:
+;   - UDP on 5060 for SIP trunks and dev softphones over Tailscale.
+;   - TLS on 5061 for softphones over the public internet (Ethio Telecom
+;     filters plain SIP/UDP — INVITEs get dropped despite REGISTERs going
+;     through). The cert files are obtained and renewed by Caddy on the
+;     host and bind-mounted into /etc/asterisk/tls/ (read-only).
+
 [transport-udp]
 type = transport
 protocol = udp
 bind = 0.0.0.0:5060
-; Public-facing addresses advertised in SDP / Contact headers so far-end
-; phones send RTP and signaling to the right place.
 external_media_address = ${ASTERISK_PUBLIC_IP}
 external_signaling_address = ${ASTERISK_PUBLIC_IP}
-; RFC1918 only — public IPs are *not* "local", so external_*_address is
-; applied to all real callers from the internet.
+local_net = 10.0.0.0/8
+local_net = 172.16.0.0/12
+local_net = 192.168.0.0/16
+
+[transport-tls]
+type = transport
+protocol = tls
+bind = 0.0.0.0:5061
+cert_file = /etc/asterisk/tls/fullchain.pem
+priv_key_file = /etc/asterisk/tls/privkey.pem
+method = tlsv1_2
+external_media_address = ${ASTERISK_PUBLIC_IP}
+external_signaling_address = ${ASTERISK_PUBLIC_IP}
 local_net = 10.0.0.0/8
 local_net = 172.16.0.0/12
 local_net = 192.168.0.0/16
