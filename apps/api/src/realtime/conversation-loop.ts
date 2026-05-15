@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality, type Session } from '@google/genai';
 import { prisma } from '@call-center/db';
+import type { ConversationTranscriptTurn } from './transcript.js';
 import { AudioBridge } from './audio-bridge.js';
 import { TtsPlayer } from './tts-player.js';
 import {
@@ -18,7 +19,7 @@ type AgentConfig = {
   ttsVoice: string;
 };
 
-type Transcript = { role: 'user' | 'assistant'; content: string; at: Date }[];
+type Transcript = ConversationTranscriptTurn[];
 type CampaignContext = {
   openingMessage: string;
   campaignPrompt: string;
@@ -59,26 +60,7 @@ export class ConversationLoop {
 
     this.ai = new GoogleGenAI({ apiKey });
     const systemInstruction = await this.buildSystemInstruction();
-
-    this.session = await this.ai.live.connect({
-      model: LIVE_MODEL,
-      config: {
-        responseModalities: [Modality.AUDIO],
-        inputAudioTranscription: {},
-        outputAudioTranscription: {},
-        systemInstruction,
-      },
-      callbacks: {
-        onopen: () =>
-          console.log(`[conv] Gemini Live connected: ${LIVE_MODEL}`),
-        onmessage: (message) => this.handleLiveMessage(message),
-        onerror: (err) => console.error('[conv] Gemini Live error:', err),
-        onclose: (event) =>
-          console.log(
-            `[conv] Gemini Live closed: ${event.code} ${event.reason}`,
-          ),
-      },
-    });
+    this.session = await this.connectLiveSession(systemInstruction);
 
     this.bridge.on('audio', (chunk: Buffer) => this.sendCallerAudio(chunk));
     this.sendGreeting();
@@ -90,6 +72,53 @@ export class ConversationLoop {
     this.player.cancel();
     this.session?.close();
     this.session = null;
+  }
+
+  private async connectLiveSession(
+    systemInstruction: string,
+  ): Promise<Session> {
+    if (!this.ai) throw new Error('Gemini client is not initialized');
+
+    const inputTranscriptionConfig = {
+      languageCodes: liveTranscriptionLanguageCodes(this.agent.language),
+    };
+    const callbacks = {
+      onopen: () => console.log(`[conv] Gemini Live connected: ${LIVE_MODEL}`),
+      onmessage: (message: Parameters<typeof this.handleLiveMessage>[0]) =>
+        this.handleLiveMessage(message),
+      onerror: (err: unknown) =>
+        console.error('[conv] Gemini Live error:', err),
+      onclose: (event: { code: number; reason: string }) =>
+        console.log(`[conv] Gemini Live closed: ${event.code} ${event.reason}`),
+    };
+
+    try {
+      return await this.ai.live.connect({
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: inputTranscriptionConfig,
+          outputAudioTranscription: {},
+          systemInstruction,
+        },
+        callbacks,
+      });
+    } catch (err) {
+      console.warn(
+        '[conv] Gemini Live rejected language-specific transcription config; retrying with auto transcription:',
+        err,
+      );
+      return this.ai.live.connect({
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          systemInstruction,
+        },
+        callbacks,
+      });
+    }
   }
 
   private sendCallerAudio(chunk: Buffer): void {
@@ -218,6 +247,9 @@ export class ConversationLoop {
       'This is a live phone call. Speak naturally, briefly, and in plain language. ' +
       'Do not use markdown, headings, bullet symbols, or code formatting because the response is spoken aloud. ' +
       'Use the provided knowledge context when it is relevant. If the answer is not in the context, say so briefly and ask a useful follow-up question.';
+    const transcriptionConstraint = this.agent.language.startsWith('en')
+      ? ''
+      : 'The caller is expected to speak Amharic. Treat unclear caller audio as Amharic, and do not switch to Hindi, Chinese, Arabic, or other languages unless the caller clearly speaks that language.';
     const campaignInstruction = this.campaignContext
       ? [
           'This is an outbound campaign call.',
@@ -234,6 +266,7 @@ export class ConversationLoop {
     return [
       this.agent.systemPrompt.trim(),
       voiceConstraint,
+      transcriptionConstraint,
       campaignInstruction,
       knowledgeContext
         ? `Knowledge context for this agent and organization:\n${knowledgeContext}`
@@ -307,6 +340,12 @@ export class ConversationLoop {
 
     return context.slice(0, MAX_DIRECT_CONTEXT_CHARS);
   }
+}
+
+export function liveTranscriptionLanguageCodes(
+  agentLanguage: string,
+): string[] {
+  return agentLanguage.startsWith('en') ? ['en-US'] : ['am-ET'];
 }
 
 function mergeTranscriptText(

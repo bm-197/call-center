@@ -117,16 +117,21 @@ async function assertDialEndpointReachable(
   try {
     const info = await ari.endpoints.get(parsed);
     if (info.state === 'offline') {
-      throw new AppError(
-        409,
-        `SIP endpoint ${endpoint} is offline. Open Linphone and re-register extension ${parsed.resource}.`,
-      );
+      const message = `SIP endpoint ${endpoint} is offline according to ARI; attempting originate anyway because mobile SIP qualify can be stale.`;
+      if (process.env.OUTBOUND_STRICT_ENDPOINT_CHECK === 'true') {
+        throw new AppError(
+          409,
+          `SIP endpoint ${endpoint} is offline. Open Linphone and re-register extension ${parsed.resource}.`,
+        );
+      }
+      console.warn(`[campaign] ${message}`);
+      return;
     }
   } catch (err) {
     if (err instanceof AppError) throw err;
-    throw new AppError(
-      409,
-      `SIP endpoint ${endpoint} is not registered or reachable from Asterisk`,
+    console.warn(
+      `[campaign] could not verify ${endpoint} with ARI; attempting originate anyway:`,
+      err,
     );
   }
 }
