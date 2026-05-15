@@ -76,6 +76,11 @@ password = ${EXT_1001_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300
 
 ;
 ; Extension 1002
@@ -103,6 +108,11 @@ password = ${EXT_1002_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300
 
 ;
 ; Extension 2001 — human agent (WebRTC)
@@ -131,3 +141,8 @@ password = ${EXT_2001_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300

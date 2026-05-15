@@ -89,13 +89,15 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members          Member[]
-  agents           Agent[]
-  calls            Call[]
-  contacts         Contact[]
-  knowledgeSources KnowledgeSource[]
-  phoneNumbers     PhoneNumber[]
-  invitations      Invitation[]
+  members            Member[]
+  agents             Agent[]
+  calls              Call[]
+  contacts           Contact[]
+  knowledgeSources   KnowledgeSource[]
+  phoneNumbers       PhoneNumber[]
+  invitations        Invitation[]
+  campaigns          Campaign[]
+  campaignRecipients CampaignRecipient[]
 
   @@map("organization")
 }
@@ -172,6 +174,7 @@ model Agent {
   calls            Call[]
   knowledgeSources KnowledgeSource[]
   phoneNumbers     PhoneNumber[]
+  campaigns        Campaign[]
 
   @@index([organizationId])
   @@map("agent")
@@ -180,10 +183,12 @@ model Agent {
 // ─── Calls ───
 
 model Call {
-  id             String  @id @default(cuid())
-  organizationId String
-  agentId        String
-  contactId      String?
+  id                  String  @id @default(cuid())
+  organizationId      String
+  agentId             String
+  contactId           String?
+  campaignId          String?
+  campaignRecipientId String?
 
   // Call details
   direction    String // inbound, outbound
@@ -216,33 +221,43 @@ model Call {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent             Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign          Campaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignRecipient CampaignRecipient? @relation(fields: [campaignRecipientId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([agentId])
   @@index([contactId])
+  @@index([campaignId])
+  @@index([campaignRecipientId])
   @@map("call")
 }
 
 // ─── Contacts ───
 
 model Contact {
-  id             String   @id @default(cuid())
-  organizationId String
-  firstName      String?
-  lastName       String?
-  email          String?
-  phoneNumber    String
-  countryCode    String   @default("+251")
-  notes          String?
-  metadata       Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String    @id @default(cuid())
+  organizationId    String
+  firstName         String?
+  lastName          String?
+  email             String?
+  phoneNumber       String
+  countryCode       String    @default("+251")
+  notes             String?
+  metadata          Json?
+  callConsentStatus String    @default("unknown")
+  callConsentSource String?
+  callConsentAt     DateTime?
+  doNotCallAt       DateTime?
+  doNotCallReason   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  calls        Call[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calls              Call[]
+  campaignRecipients CampaignRecipient[]
 
   @@unique([organizationId, phoneNumber])
   @@index([organizationId])
@@ -318,8 +333,87 @@ model PhoneNumber {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  campaigns    Campaign[]
 
   @@index([organizationId])
   @@index([agentId])
   @@map("phone_number")
+}
+
+// ─── Outbound Campaigns ───
+
+model Campaign {
+  id             String  @id @default(cuid())
+  organizationId String
+  agentId        String
+  phoneNumberId  String?
+  name           String
+  description    String?
+  status         String  @default("draft") // draft, running, paused, completed, canceled
+
+  openingMessage String
+  campaignPrompt String @default("")
+
+  maxConcurrency     Int    @default(2)
+  maxAttempts        Int    @default(2)
+  retryDelayMinutes  Int    @default(30)
+  callTimeoutSeconds Int    @default(30)
+  quietHoursStart    String @default("09:00")
+  quietHoursEnd      String @default("18:00")
+  timezone           String @default("Africa/Addis_Ababa")
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  canceledAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  phoneNumber  PhoneNumber?        @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  recipients   CampaignRecipient[]
+  calls        Call[]
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([phoneNumberId])
+  @@index([status])
+  @@map("campaign")
+}
+
+model CampaignRecipient {
+  id             String  @id @default(cuid())
+  organizationId String
+  campaignId     String
+  contactId      String?
+  phoneNumber    String
+  displayName    String?
+  email          String?
+  variables      Json?
+
+  status         String    @default("queued") // queued, dialing, in_call, completed, skipped, canceled
+  deliveryStatus String?
+  outcome        String?
+  outcomeNotes   String?
+  attemptCount   Int       @default(0)
+  nextAttemptAt  DateTime?
+  lastAttemptAt  DateTime?
+  lastCallId     String?
+  lastError      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  calls        Call[]
+
+  @@unique([campaignId, phoneNumber])
+  @@index([organizationId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([status])
+  @@index([nextAttemptAt])
+  @@map("campaign_recipient")
 }
