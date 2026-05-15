@@ -1,9 +1,13 @@
+import { GoogleGenAI, Modality, type Session } from '@google/genai';
+import { prisma } from '@call-center/db';
 import { AudioBridge } from './audio-bridge.js';
-import { SttStream } from './stt-stream.js';
-import { synthesizeMulaw } from './tts.js';
-import { streamSentences, type ChatMessage } from './llm-stream.js';
-import { queryKnowledgeBase, formatChunksForPrompt } from './kb-query.js';
 import { TtsPlayer } from './tts-player.js';
+import {
+  GEMINI_INPUT_SAMPLE_RATE,
+  geminiPcm16Base64ToMulaw8k,
+  mulaw8kToGeminiPcm16Base64,
+  parsePcmRate,
+} from './live-audio-codec.js';
 
 type AgentConfig = {
   id: string;
@@ -16,194 +20,268 @@ type AgentConfig = {
 
 type Transcript = { role: 'user' | 'assistant'; content: string; at: Date }[];
 
-const DEFAULT_GREETINGS: Record<string, string> = {
-  am: 'ሰላም! እንዴት ልረዳዎት እችላለሁ?',
-  en: 'Hello! How can I help you today?',
-};
-
-function languageCode(lang: string): { stt: string; tts: string } {
-  if (lang.startsWith('en')) return { stt: 'en-US', tts: 'en-US' };
-  return { stt: 'am-ET', tts: 'am-ET' };
-}
-
-function defaultGreeting(lang: string): string {
-  const key = lang.startsWith('en') ? 'en' : 'am';
-  return DEFAULT_GREETINGS[key]!;
-}
+const LIVE_MODEL =
+  process.env.GEMINI_LIVE_MODEL ?? 'gemini-3.1-flash-live-preview';
+const CONTEXT_SUMMARY_MODEL =
+  process.env.GEMINI_CONTEXT_SUMMARY_MODEL ?? 'gemini-2.5-flash';
+const MAX_DIRECT_CONTEXT_CHARS = Number(
+  process.env.GEMINI_LIVE_CONTEXT_MAX_CHARS ?? 12_000,
+);
+const SUMMARY_TARGET_CHARS = Number(
+  process.env.GEMINI_LIVE_CONTEXT_SUMMARY_CHARS ?? 6_000,
+);
+const TRANSCRIPTION_LANGUAGE_CODE = 'am';
 
 export class ConversationLoop {
-  private stt: SttStream;
   private player: TtsPlayer;
-  private history: ChatMessage[] = [];
+  private ai: GoogleGenAI | null = null;
+  private session: Session | null = null;
   public readonly transcript: Transcript = [];
-  private currentTurn: AbortController | null = null;
   private closed = false;
-  private langs: { stt: string; tts: string };
+  private currentUserText = '';
+  private currentAssistantText = '';
 
   constructor(
     private readonly bridge: AudioBridge,
     private readonly agent: AgentConfig,
   ) {
-    this.langs = languageCode(agent.language);
-    this.stt = new SttStream({ languageCode: this.langs.stt });
     this.player = new TtsPlayer(bridge);
-
-    if (agent.systemPrompt.trim()) {
-      this.history.push({ role: 'system', content: agent.systemPrompt });
-    }
   }
 
   async start(): Promise<void> {
-    let bytesIn = 0;
-    let lastReport = Date.now();
-    this.bridge.on('audio', (chunk: Buffer) => {
-      bytesIn += chunk.length;
-      this.stt.write(chunk);
-      const now = Date.now();
-      if (now - lastReport > 2000) {
-        console.log(
-          `[conv] inbound audio: ${bytesIn} bytes (${(bytesIn / 8000).toFixed(1)}s @ 8kHz µ-law)`,
-        );
-        lastReport = now;
-      }
-    });
-    this.stt.on('interim', () => this.handleBargeIn());
-    this.stt.on('final', (text: string) => {
-      this.handleUserTurn(text).catch((err) =>
-        console.error('[conv] turn failed:', err),
-      );
-    });
-    this.stt.on('error', (err: Error) =>
-      console.error('[conv] STT error:', err.message),
-    );
-    await this.stt.start();
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY is required for live calls');
 
-    // Greeting — synthesized synchronously before STT can produce a result,
-    // so it always plays first.
-    await this.speak(defaultGreeting(this.agent.language), {
-      role: 'assistant',
-      record: true,
+    this.ai = new GoogleGenAI({ apiKey });
+    const systemInstruction = await this.buildSystemInstruction();
+
+    this.session = await this.ai.live.connect({
+      model: LIVE_MODEL,
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        systemInstruction,
+      },
+      callbacks: {
+        onopen: () =>
+          console.log(`[conv] Gemini Live connected: ${LIVE_MODEL}`),
+        onmessage: (message) => this.handleLiveMessage(message),
+        onerror: (err) => console.error('[conv] Gemini Live error:', err),
+        onclose: (event) =>
+          console.log(
+            `[conv] Gemini Live closed: ${event.code} ${event.reason}`,
+          ),
+      },
     });
+
+    this.bridge.on('audio', (chunk: Buffer) => this.sendCallerAudio(chunk));
+    this.sendGreeting();
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.currentTurn?.abort();
-    this.stt.close();
     this.player.cancel();
+    this.session?.close();
+    this.session = null;
   }
 
-  private handleBargeIn(): void {
-    // Real barge-in only happens while the AI is actually speaking back
-    // to the caller. If we're still computing a response (KB/LLM in
-    // flight) we let it finish — interims at this point are usually the
-    // tail of the caller's just-finished utterance, not a fresh
-    // interruption.
-    if (!this.player.isPlaying()) return;
-    console.log('[conv] barge-in: cancelling TTS + LLM');
-    this.player.cancel();
-    this.currentTurn?.abort();
+  private sendCallerAudio(chunk: Buffer): void {
+    if (this.closed || !this.session || chunk.length === 0) return;
+    try {
+      this.session.sendRealtimeInput({
+        audio: {
+          data: mulaw8kToGeminiPcm16Base64(chunk),
+          mimeType: `audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}`,
+        },
+      });
+    } catch (err) {
+      console.error('[conv] failed to stream caller audio:', err);
+    }
   }
 
-  private async handleUserTurn(userText: string): Promise<void> {
-    if (this.closed) return;
-    console.log(`[conv] user: ${userText}`);
-    this.transcript.push({ role: 'user', content: userText, at: new Date() });
-
-    const ctrl = new AbortController();
-    this.currentTurn = ctrl;
-
-    const chunks = await queryKnowledgeBase({
-      query: userText,
-      organizationId: this.agent.organizationId,
-      agentId: this.agent.id,
-      signal: ctrl.signal,
+  private sendGreeting(): void {
+    const language = this.agent.language.startsWith('en')
+      ? 'English'
+      : 'Amharic';
+    this.session?.sendClientContent({
+      turns: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text:
+                `The phone call has just started. Greet the caller in ${language} ` +
+                'in one short sentence and ask how you can help.',
+            },
+          ],
+        },
+      ],
+      turnComplete: true,
     });
-    if (ctrl.signal.aborted) return;
+  }
 
-    const kbContext = formatChunksForPrompt(chunks);
-    // Voice-call constraints: this output is going straight to TTS, so
-    // any markdown gets read aloud as punctuation. Keep replies short
-    // and conversational.
+  private handleLiveMessage(message: {
+    serverContent?: {
+      interrupted?: boolean;
+      turnComplete?: boolean;
+      inputTranscription?: { text?: string; finished?: boolean };
+      outputTranscription?: { text?: string; finished?: boolean };
+      modelTurn?: {
+        parts?: Array<{
+          inlineData?: { data?: string; mimeType?: string };
+          text?: string;
+        }>;
+      };
+    };
+  }): void {
+    const content = message.serverContent;
+    if (!content) return;
+
+    if (content.interrupted) {
+      this.player.cancel();
+    }
+
+    this.currentUserText = mergeTranscriptText(
+      this.currentUserText,
+      content.inputTranscription?.text,
+    );
+    this.currentAssistantText = mergeTranscriptText(
+      this.currentAssistantText,
+      content.outputTranscription?.text,
+    );
+
+    for (const part of content.modelTurn?.parts ?? []) {
+      const audio = part.inlineData?.data;
+      if (!audio) continue;
+
+      const sampleRate = parsePcmRate(part.inlineData?.mimeType);
+      const mulaw = geminiPcm16Base64ToMulaw8k(audio, sampleRate);
+      this.player.enqueue(mulaw);
+    }
+
+    if (content.turnComplete) {
+      this.commitTranscriptTurn();
+    }
+  }
+
+  private commitTranscriptTurn(): void {
+    const userText = this.currentUserText.trim();
+    if (userText) {
+      this.transcript.push({ role: 'user', content: userText, at: new Date() });
+      console.log(`[conv] user: ${userText}`);
+    }
+
+    const assistantText = this.currentAssistantText.trim();
+    if (assistantText) {
+      this.transcript.push({
+        role: 'assistant',
+        content: assistantText,
+        at: new Date(),
+      });
+      console.log(`[conv] ai: ${assistantText}`);
+    }
+
+    this.currentUserText = '';
+    this.currentAssistantText = '';
+  }
+
+  private async buildSystemInstruction(): Promise<string> {
+    const knowledgeContext = await this.loadKnowledgeContext();
     const voiceConstraint =
-      'This is a live phone call. Your reply will be spoken aloud by a text-to-speech engine, so:\n' +
-      '- Respond in plain text only. NEVER use markdown (no **bold**, _italics_, `code`, headings, or bullet points like "- " or "* ").\n' +
-      '- Numbered lists ("1. ... 2. ...") are fine when listing options — they read naturally aloud.\n' +
-      '- Keep replies short and conversational.';
-    const systemPrompt = [
-      this.agent.systemPrompt,
+      'This is a live phone call. Speak naturally, briefly, and in plain language. ' +
+      'Do not use markdown, headings, bullet symbols, or code formatting because the response is spoken aloud. ' +
+      'Use the provided knowledge context when it is relevant. If the answer is not in the context, say so briefly and ask a useful follow-up question.';
+
+    return [
+      this.agent.systemPrompt.trim(),
       voiceConstraint,
-      kbContext ? `Reference information you may use:\n${kbContext}` : '',
+      knowledgeContext
+        ? `Knowledge context for this agent and organization:\n${knowledgeContext}`
+        : '',
     ]
       .filter(Boolean)
       .join('\n\n');
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...this.history.filter((m) => m.role !== 'system'),
-      { role: 'user', content: userText },
-    ];
-
-    let assistantText = '';
-    try {
-      const gen = streamSentences({
-        model: this.agent.llmModel,
-        messages,
-        signal: ctrl.signal,
-      });
-      for (;;) {
-        const next = await gen.next();
-        if (next.done) {
-          assistantText = next.value ?? assistantText;
-          break;
-        }
-        const sentence = next.value;
-        assistantText += (assistantText ? ' ' : '') + sentence;
-        await this.speak(sentence, { role: 'assistant', record: false });
-        if (ctrl.signal.aborted) break;
-      }
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return;
-      console.error('[conv] LLM stream failed:', err);
-      return;
-    }
-
-    if (assistantText.trim()) {
-      this.history.push({ role: 'user', content: userText });
-      this.history.push({ role: 'assistant', content: assistantText.trim() });
-      this.transcript.push({
-        role: 'assistant',
-        content: assistantText.trim(),
-        at: new Date(),
-      });
-      console.log(`[conv] ai: ${assistantText.trim()}`);
-    }
-    if (this.currentTurn === ctrl) this.currentTurn = null;
   }
 
-  private async speak(
-    text: string,
-    meta: { role: 'assistant'; record: boolean },
-  ): Promise<void> {
-    if (!text.trim() || this.closed) return;
-    try {
-      const audio = await synthesizeMulaw({
-        text,
-        languageCode: this.langs.tts,
-        voiceName: this.agent.ttsVoice,
-      });
-      if (this.closed) return;
-      this.player.enqueue(audio);
-      if (meta.record) {
-        this.transcript.push({
-          role: meta.role,
-          content: text,
-          at: new Date(),
-        });
-      }
-    } catch (err) {
-      console.error('[conv] TTS failed:', err);
-    }
+  private async loadKnowledgeContext(): Promise<string> {
+    const sources = await prisma.knowledgeSource.findMany({
+      where: {
+        organizationId: this.agent.organizationId,
+        sourceContent: { not: null },
+        OR: [{ agentId: this.agent.id }, { agentId: null }],
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      select: {
+        agentId: true,
+        name: true,
+        description: true,
+        language: true,
+        sourceContent: true,
+      },
+    });
+
+    const sections = sources
+      .map((source) => {
+        const content = source.sourceContent?.trim();
+        if (!content) return null;
+        const scope =
+          source.agentId === this.agent.id ? 'Agent-specific' : 'Organization';
+        return [
+          `[${scope}] ${source.name}`,
+          source.description ? `Description: ${source.description}` : '',
+          `Language: ${source.language}`,
+          content,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      })
+      .filter((section): section is string => Boolean(section));
+
+    if (sections.length === 0) return '';
+
+    const directContext = sections.join('\n\n---\n\n');
+    if (directContext.length <= MAX_DIRECT_CONTEXT_CHARS) return directContext;
+
+    return this.summarizeKnowledgeContext(directContext);
   }
+
+  private async summarizeKnowledgeContext(context: string): Promise<string> {
+    if (!this.ai) return context.slice(0, MAX_DIRECT_CONTEXT_CHARS);
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: CONTEXT_SUMMARY_MODEL,
+        contents:
+          'Summarize the following Amharic/English call-center knowledge for a voice assistant. ' +
+          `Keep facts, prices, policies, steps, names, and phone numbers. Stay under ${SUMMARY_TARGET_CHARS} characters.\n\n` +
+          context,
+      });
+      const summary = response.text?.trim();
+      if (summary) return summary;
+    } catch (err) {
+      console.error(
+        '[conv] knowledge summary failed; using truncated context:',
+        err,
+      );
+    }
+
+    return context.slice(0, MAX_DIRECT_CONTEXT_CHARS);
+  }
+}
+
+function mergeTranscriptText(
+  current: string,
+  next: string | undefined,
+): string {
+  if (!next) return current;
+  if (!current) return next;
+  if (next.startsWith(current)) return next;
+  if (current.endsWith(next)) return current;
+  return `${current}${needsSpace(current, next) ? ' ' : ''}${next}`;
+}
+
+function needsSpace(left: string, right: string): boolean {
+  return /\S$/.test(left) && /^\S/.test(right);
 }
