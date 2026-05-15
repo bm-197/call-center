@@ -136,14 +136,22 @@ async function assertDialEndpointReachable(
   }
 }
 
-function outboundEndpoint(phoneNumber: string): string {
+export function outboundEndpoint(phoneNumber: string): string {
   const specific =
     process.env[`OUTBOUND_DIAL_ENDPOINT_${endpointEnvKey(phoneNumber)}`];
-  if (specific) return renderEndpointTemplate(specific, phoneNumber);
+  if (specific) {
+    return normalizeRegisteredPjsipEndpoint(
+      renderEndpointTemplate(specific, phoneNumber),
+      phoneNumber,
+    );
+  }
 
   const template =
     process.env.OUTBOUND_DIAL_ENDPOINT_TEMPLATE ?? 'PJSIP/{{number}}';
-  return renderEndpointTemplate(template, phoneNumber);
+  return normalizeRegisteredPjsipEndpoint(
+    renderEndpointTemplate(template, phoneNumber),
+    phoneNumber,
+  );
 }
 
 function renderEndpointTemplate(template: string, phoneNumber: string): string {
@@ -154,6 +162,23 @@ function renderEndpointTemplate(template: string, phoneNumber: string): string {
 
 function endpointEnvKey(phoneNumber: string): string {
   return phoneNumber.replace(/[^A-Za-z0-9]/g, '_');
+}
+
+export function normalizeRegisteredPjsipEndpoint(
+  endpoint: string,
+  phoneNumber: string,
+): string {
+  const trimmed = endpoint.trim();
+  const match = /^PJSIP\/([^/]+)\/sip:/i.exec(trimmed);
+  if (!match) return trimmed;
+
+  const resource = match[1] ?? '';
+  if (resource !== phoneNumber) return trimmed;
+
+  console.warn(
+    `[campaign] normalized stale contact URI ${trimmed} to PJSIP/${resource}; registered SIP contacts are dynamic`,
+  );
+  return `PJSIP/${resource}`;
 }
 
 function parseSimplePjsipEndpoint(
