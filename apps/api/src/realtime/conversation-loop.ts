@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality, type Session } from '@google/genai';
 import { prisma } from '@call-center/db';
 import type { ConversationTranscriptTurn } from './transcript.js';
 import { AudioBridge } from './audio-bridge.js';
+import { SttStream } from './stt-stream.js';
 import { TtsPlayer } from './tts-player.js';
 import {
   GEMINI_INPUT_SAMPLE_RATE,
@@ -36,15 +37,32 @@ const MAX_DIRECT_CONTEXT_CHARS = Number(
 const SUMMARY_TARGET_CHARS = Number(
   process.env.GEMINI_LIVE_CONTEXT_SUMMARY_CHARS ?? 6_000,
 );
+const VAD_PREFIX_PADDING_MS = Number(
+  process.env.GEMINI_LIVE_VAD_PREFIX_PADDING_MS ?? 300,
+);
+const VAD_SILENCE_DURATION_MS = Number(
+  process.env.GEMINI_LIVE_VAD_SILENCE_DURATION_MS ?? 1_000,
+);
+const CALLER_TRANSCRIPT_STT_ENABLED =
+  process.env.CALLER_TRANSCRIPT_STT_ENABLED !== 'false';
+const TRANSCRIPT_ALIGN_WAIT_MS = Number(
+  process.env.CALLER_TRANSCRIPT_ALIGN_WAIT_MS ?? 2_500,
+);
 
 export class ConversationLoop {
   private player: TtsPlayer;
   private ai: GoogleGenAI | null = null;
   private session: Session | null = null;
+  private callerStt: SttStream | null = null;
   public readonly transcript: Transcript = [];
   private closed = false;
-  private currentUserText = '';
+  private currentGeminiUserText = '';
   private currentAssistantText = '';
+  private callerTranscriptSource: 'stt' | 'gemini' =
+    CALLER_TRANSCRIPT_STT_ENABLED ? 'stt' : 'gemini';
+  private pendingCallerTurns: ConversationTranscriptTurn[] = [];
+  private pendingAssistantTurn: ConversationTranscriptTurn | null = null;
+  private pendingAssistantTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly bridge: AudioBridge,
@@ -61,17 +79,67 @@ export class ConversationLoop {
     this.ai = new GoogleGenAI({ apiKey });
     const systemInstruction = await this.buildSystemInstruction();
     this.session = await this.connectLiveSession(systemInstruction);
+    this.startCallerTranscriptStream();
 
-    this.bridge.on('audio', (chunk: Buffer) => this.sendCallerAudio(chunk));
+    this.bridge.on('audio', (chunk: Buffer) => {
+      this.sendCallerAudio(chunk);
+      this.callerStt?.write(chunk);
+    });
     this.sendGreeting();
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.callerStt?.close();
+    this.callerStt = null;
+    this.commitTranscriptTurn();
+    this.flushTranscriptBuffers();
     this.player.cancel();
     this.session?.close();
     this.session = null;
+  }
+
+  private startCallerTranscriptStream(): void {
+    if (!CALLER_TRANSCRIPT_STT_ENABLED) {
+      console.log(
+        '[conv] caller transcript STT disabled; using Gemini Live transcript fallback',
+      );
+      return;
+    }
+
+    const stt = new SttStream({
+      languageCode: callerTranscriptLanguageCode(this.agent.language),
+    });
+    this.callerStt = stt;
+
+    stt.on('final', (text) => this.queueCallerTranscript(text));
+    stt.on('error', (err) => {
+      console.error('[conv] caller transcript STT error:', err);
+      stt.close();
+      if (this.callerStt === stt) {
+        this.callerStt = null;
+      }
+    });
+
+    stt
+      .start()
+      .then(() => {
+        console.log(
+          `[conv] caller transcript STT connected: ${callerTranscriptLanguageCode(this.agent.language)}`,
+        );
+      })
+      .catch((err) => {
+        console.error(
+          '[conv] caller transcript STT failed to start; using Gemini Live transcript fallback:',
+          err,
+        );
+        stt.close();
+        if (this.callerStt === stt) {
+          this.callerStt = null;
+        }
+        this.callerTranscriptSource = 'gemini';
+      });
   }
 
   private async connectLiveSession(
@@ -99,6 +167,7 @@ export class ConversationLoop {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: inputTranscriptionConfig,
           outputAudioTranscription: {},
+          realtimeInputConfig: liveRealtimeInputConfig(),
           systemInstruction,
         },
         callbacks,
@@ -114,6 +183,7 @@ export class ConversationLoop {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          realtimeInputConfig: liveRealtimeInputConfig(),
           systemInstruction,
         },
         callbacks,
@@ -196,8 +266,8 @@ export class ConversationLoop {
       this.player.cancel();
     }
 
-    this.currentUserText = mergeTranscriptText(
-      this.currentUserText,
+    this.currentGeminiUserText = mergeTranscriptText(
+      this.currentGeminiUserText,
       content.inputTranscription?.text,
     );
     this.currentAssistantText = mergeTranscriptText(
@@ -221,24 +291,77 @@ export class ConversationLoop {
   }
 
   private commitTranscriptTurn(): void {
-    const userText = this.currentUserText.trim();
-    if (userText) {
-      this.transcript.push({ role: 'user', content: userText, at: new Date() });
-      console.log(`[conv] user: ${userText}`);
+    const userText = this.currentGeminiUserText.trim();
+    if (this.callerTranscriptSource === 'gemini' && userText) {
+      this.queueCallerTranscript(userText);
     }
 
     const assistantText = this.currentAssistantText.trim();
     if (assistantText) {
-      this.transcript.push({
-        role: 'assistant',
-        content: assistantText,
-        at: new Date(),
-      });
-      console.log(`[conv] ai: ${assistantText}`);
+      this.queueAssistantTranscript(assistantText);
     }
 
-    this.currentUserText = '';
+    this.currentGeminiUserText = '';
     this.currentAssistantText = '';
+  }
+
+  private queueCallerTranscript(text: string): void {
+    const content = text.trim();
+    if (!content) return;
+
+    this.pendingCallerTurns.push({
+      role: 'user',
+      content,
+      at: new Date(),
+    });
+
+    if (this.pendingAssistantTurn) {
+      this.flushTranscriptBuffers();
+    }
+  }
+
+  private queueAssistantTranscript(text: string): void {
+    const content = text.trim();
+    if (!content) return;
+
+    if (this.pendingAssistantTurn) {
+      this.flushTranscriptBuffers();
+    }
+
+    this.pendingAssistantTurn = {
+      role: 'assistant',
+      content,
+      at: new Date(),
+    };
+
+    if (this.pendingCallerTurns.length > 0) {
+      this.flushTranscriptBuffers();
+      return;
+    }
+
+    this.pendingAssistantTimer = setTimeout(
+      () => this.flushTranscriptBuffers(),
+      TRANSCRIPT_ALIGN_WAIT_MS,
+    );
+  }
+
+  private flushTranscriptBuffers(): void {
+    if (this.pendingAssistantTimer) {
+      clearTimeout(this.pendingAssistantTimer);
+      this.pendingAssistantTimer = null;
+    }
+
+    for (const turn of this.pendingCallerTurns) {
+      this.transcript.push(turn);
+      console.log(`[conv] user: ${turn.content}`);
+    }
+    this.pendingCallerTurns = [];
+
+    if (this.pendingAssistantTurn) {
+      this.transcript.push(this.pendingAssistantTurn);
+      console.log(`[conv] ai: ${this.pendingAssistantTurn.content}`);
+      this.pendingAssistantTurn = null;
+    }
   }
 
   private async buildSystemInstruction(): Promise<string> {
@@ -345,7 +468,25 @@ export class ConversationLoop {
 export function liveTranscriptionLanguageCodes(
   agentLanguage: string,
 ): string[] {
-  return agentLanguage.startsWith('en') ? ['en-US'] : ['am-ET'];
+  return agentLanguage.startsWith('en') ? ['en-US'] : ['am'];
+}
+
+export function callerTranscriptLanguageCode(agentLanguage: string): string {
+  return agentLanguage.startsWith('en') ? 'en-US' : 'am-ET';
+}
+
+export function liveRealtimeInputConfig(): {
+  automaticActivityDetection: {
+    prefixPaddingMs: number;
+    silenceDurationMs: number;
+  };
+} {
+  return {
+    automaticActivityDetection: {
+      prefixPaddingMs: VAD_PREFIX_PADDING_MS,
+      silenceDurationMs: VAD_SILENCE_DURATION_MS,
+    },
+  };
 }
 
 function mergeTranscriptText(
