@@ -97,18 +97,54 @@ const contactAddInput = z.object({
   contactIds: z.array(z.string()).min(1).max(2000),
 });
 
+const campaignListQuery = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  status: z
+    .enum(['draft', 'running', 'paused', 'completed', 'canceled'])
+    .optional(),
+  search: z.string().max(80).optional(),
+});
+
 router.get('/', async (req, res, next) => {
   try {
-    const campaigns = await prisma.campaign.findMany({
-      where: { organizationId: req.activeOrganizationId! },
-      include: {
-        agent: { select: { id: true, name: true } },
-        phoneNumber: { select: { id: true, number: true, friendlyName: true } },
-        _count: { select: { recipients: true, calls: true } },
+    const q = campaignListQuery.parse(req.query);
+    const where = {
+      organizationId: req.activeOrganizationId!,
+      ...(q.status && { status: q.status }),
+      ...(q.search && {
+        OR: [
+          { name: { contains: q.search } },
+          { description: { contains: q.search } },
+        ],
+      }),
+    };
+    const include = {
+      agent: { select: { id: true, name: true } },
+      phoneNumber: { select: { id: true, number: true, friendlyName: true } },
+      _count: { select: { recipients: true, calls: true } },
+    } as const;
+
+    const [total, campaigns] = await Promise.all([
+      prisma.campaign.count({ where }),
+      prisma.campaign.findMany({
+        where,
+        include,
+        orderBy: { updatedAt: 'desc' },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+    ]);
+
+    res.json({
+      items: campaigns,
+      pagination: {
+        page: q.page,
+        pageSize: q.pageSize,
+        total,
+        pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
       },
-      orderBy: { updatedAt: 'desc' },
     });
-    res.json(campaigns);
   } catch (err) {
     next(err);
   }

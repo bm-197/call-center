@@ -52,7 +52,7 @@ export function KnowledgeDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>
             {isNew ? 'Add knowledge source' : 'Edit knowledge source'}
@@ -161,7 +161,7 @@ function TextForm({
         <Textarea
           id="content"
           required
-          rows={10}
+          rows={18}
           value={form.sourceContent}
           onChange={(e) => update_('sourceContent', e.target.value)}
           placeholder={
@@ -170,7 +170,7 @@ function TextForm({
               : 'Paste your FAQ, policies, or any reference text here.'
           }
           disabled={pending}
-          className="font-mono text-sm"
+          className="max-h-[60vh] min-h-[420px] resize-y overflow-y-auto font-mono text-sm leading-relaxed"
         />
         <p className="text-muted-foreground text-xs">
           {form.sourceContent.length.toLocaleString()} characters

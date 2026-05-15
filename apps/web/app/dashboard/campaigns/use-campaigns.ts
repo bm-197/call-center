@@ -69,6 +69,23 @@ export type CampaignInput = {
   timezone?: string;
 };
 
+export type CampaignListParams = {
+  page?: number;
+  pageSize?: number;
+  status?: CampaignStatus;
+  search?: string;
+};
+
+export type PaginatedResponse<T> = {
+  items: T[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+  };
+};
+
 export type CampaignRecipient = {
   id: string;
   campaignId: string;
@@ -102,16 +119,32 @@ export type CampaignRecipient = {
 
 export const campaignKeys = {
   all: ['campaigns'] as const,
-  list: () => [...campaignKeys.all, 'list'] as const,
+  list: (params?: CampaignListParams) =>
+    [...campaignKeys.all, 'list', params] as const,
   detail: (id: string) => [...campaignKeys.all, 'detail', id] as const,
   recipients: (id: string) =>
     [...campaignKeys.detail(id), 'recipients'] as const,
 };
 
-export function useCampaigns() {
+function buildCampaignQuery(params: CampaignListParams | undefined): string {
+  if (!params) return '';
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+  if (params.status) query.set('status', params.status);
+  if (params.search) query.set('search', params.search);
+  const qs = query.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export function useCampaigns(params?: CampaignListParams) {
   return useQuery({
-    queryKey: campaignKeys.list(),
-    queryFn: () => api<Campaign[]>('/api/campaigns'),
+    queryKey: campaignKeys.list(params),
+    queryFn: () =>
+      api<PaginatedResponse<Campaign>>(
+        `/api/campaigns${buildCampaignQuery(params)}`,
+      ),
+    placeholderData: (previous) => previous,
     refetchInterval: 10_000,
   });
 }

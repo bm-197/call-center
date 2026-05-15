@@ -34,6 +34,8 @@ const listQuery = z.object({
   search: z.string().max(80).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -54,41 +56,72 @@ router.get('/', async (req, res, next) => {
       }),
     };
 
-    const calls = await prisma.call.findMany({
-      where,
-      take: q.limit + 1,
-      ...(q.cursor && { cursor: { id: q.cursor }, skip: 1 }),
-      orderBy: { startedAt: 'desc' },
-      select: {
-        id: true,
-        direction: true,
-        callerNumber: true,
-        calleeNumber: true,
-        status: true,
-        duration: true,
-        handedOff: true,
-        handoffReason: true,
-        sentiment: true,
-        startedAt: true,
-        endedAt: true,
-        agent: { select: { id: true, name: true } },
-        contact: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-          },
+    const select = {
+      id: true,
+      direction: true,
+      callerNumber: true,
+      calleeNumber: true,
+      status: true,
+      duration: true,
+      handedOff: true,
+      handoffReason: true,
+      sentiment: true,
+      startedAt: true,
+      endedAt: true,
+      agent: { select: { id: true, name: true } },
+      contact: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phoneNumber: true,
         },
       },
+    } as const;
+
+    if (q.cursor) {
+      const calls = await prisma.call.findMany({
+        where,
+        take: q.limit + 1,
+        cursor: { id: q.cursor },
+        skip: 1,
+        orderBy: { startedAt: 'desc' },
+        select,
+      });
+
+      const hasMore = calls.length > q.limit;
+      const items = hasMore ? calls.slice(0, q.limit) : calls;
+      const last = items[items.length - 1];
+      res.json({
+        items,
+        nextCursor: hasMore && last ? last.id : null,
+        pagination: null,
+      });
+      return;
+    }
+
+    const pageSize = q.pageSize ?? q.limit;
+    const [total, calls] = await Promise.all([
+      prisma.call.count({ where }),
+      prisma.call.findMany({
+        where,
+        skip: (q.page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { startedAt: 'desc' },
+        select,
+      }),
+    ]);
+
+    res.json({
+      items: calls,
+      nextCursor: null,
+      pagination: {
+        page: q.page,
+        pageSize,
+        total,
+        pageCount: Math.max(1, Math.ceil(total / pageSize)),
+      },
     });
-
-    const hasMore = calls.length > q.limit;
-    const items = hasMore ? calls.slice(0, q.limit) : calls;
-    const last = items[items.length - 1];
-    const nextCursor = hasMore && last ? last.id : null;
-
-    res.json({ items, nextCursor });
   } catch (err) {
     next(err);
   }

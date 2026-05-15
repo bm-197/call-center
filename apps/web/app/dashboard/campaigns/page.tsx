@@ -55,10 +55,18 @@ const STATUS_VARIANT: Record<
   completed: 'outline',
   canceled: 'destructive',
 };
+const PAGE_SIZE = 10;
 
 export default function CampaignsPage() {
-  const { data: campaigns, isLoading } = useCampaigns();
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useCampaigns({ page, pageSize: PAGE_SIZE });
   const [open, setOpen] = useState(false);
+  const campaigns = data?.items ?? [];
+  const pagination = data?.pagination;
+  const total = pagination?.total ?? campaigns.length;
+  const pageCount = pagination?.pageCount ?? 1;
+  const start = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, total);
 
   return (
     <div className="space-y-8">
@@ -80,7 +88,7 @@ export default function CampaignsPage() {
             <Skeleton className="h-12 w-full" />
           </CardContent>
         </Card>
-      ) : !campaigns || campaigns.length === 0 ? (
+      ) : campaigns.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
             <div className="bg-muted flex h-12 w-12 items-center justify-center rounded-full">
@@ -106,57 +114,85 @@ export default function CampaignsPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Recipients</TableHead>
-                  <TableHead>Calls</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Updated</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaigns.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      <Link
-                        href={`/dashboard/campaigns/${c.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {c.name}
-                      </Link>
-                      {c.description && (
-                        <div className="text-muted-foreground line-clamp-1 text-xs">
-                          {c.description}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {c.agent?.name ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {c._count?.recipients ?? 0}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {c._count?.calls ?? 0}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={STATUS_VARIANT[c.status]}
-                        className="capitalize"
-                      >
-                        {c.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(c.updatedAt).toLocaleDateString()}
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Recipients</TableHead>
+                    <TableHead>Calls</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Updated</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {campaigns.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link
+                          href={`/dashboard/campaigns/${c.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                        {c.description && (
+                          <div className="text-muted-foreground line-clamp-1 text-xs">
+                            {c.description}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {c.agent?.name ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {c._count?.recipients ?? 0}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {c._count?.calls ?? 0}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={STATUS_VARIANT[c.status]}
+                          className="capitalize"
+                        >
+                          {c.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(c.updatedAt).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground">
+                  Showing {start}-{end} of {total}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-muted-foreground min-w-24 text-center">
+                    Page {page} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    disabled={page >= pageCount}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
           </CardContent>
         </Card>
       )}
@@ -235,7 +271,7 @@ function CreateCampaignDialog({ onClose }: { onClose: () => void }) {
                 <SelectTrigger id="agent">
                   <SelectValue placeholder="Select an active agent" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" align="start">
                   {activeAgents.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
                       {a.name}
@@ -268,7 +304,7 @@ function CreateCampaignDialog({ onClose }: { onClose: () => void }) {
               <SelectTrigger id="from">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="start">
                 <SelectItem value={NONE}>Use campaign default</SelectItem>
                 {(numbers ?? []).map((n) => (
                   <SelectItem key={n.id} value={n.id}>
