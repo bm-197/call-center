@@ -12,6 +12,7 @@ import {
   UserMultiple02Icon,
   UserGroupIcon,
   BookOpen01Icon,
+  Megaphone01Icon,
   Settings02Icon,
   Logout03Icon,
 } from '@hugeicons/core-free-icons';
@@ -58,6 +59,11 @@ const sections: {
         href: '/dashboard/contacts',
         label: 'Contacts',
         icon: UserMultiple02Icon,
+      },
+      {
+        href: '/dashboard/campaigns',
+        label: 'Campaigns',
+        icon: Megaphone01Icon,
       },
     ],
   },

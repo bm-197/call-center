@@ -19,6 +19,11 @@ type AgentConfig = {
 };
 
 type Transcript = { role: 'user' | 'assistant'; content: string; at: Date }[];
+type CampaignContext = {
+  openingMessage: string;
+  campaignPrompt: string;
+  variables: Record<string, string | number | boolean | null>;
+};
 
 const LIVE_MODEL =
   process.env.GEMINI_LIVE_MODEL ?? 'gemini-3.1-flash-live-preview';
@@ -43,6 +48,7 @@ export class ConversationLoop {
   constructor(
     private readonly bridge: AudioBridge,
     private readonly agent: AgentConfig,
+    private readonly campaignContext: CampaignContext | null = null,
   ) {
     this.player = new TtsPlayer(bridge);
   }
@@ -101,6 +107,25 @@ export class ConversationLoop {
   }
 
   private sendGreeting(): void {
+    if (this.campaignContext) {
+      this.session?.sendClientContent({
+        turns: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text:
+                  'The outbound campaign call has just connected. Start speaking now using this opening message naturally, then continue the conversation according to the campaign instructions:\n\n' +
+                  this.campaignContext.openingMessage,
+              },
+            ],
+          },
+        ],
+        turnComplete: true,
+      });
+      return;
+    }
+
     const language = this.agent.language.startsWith('en')
       ? 'English'
       : 'Amharic';
@@ -193,10 +218,23 @@ export class ConversationLoop {
       'This is a live phone call. Speak naturally, briefly, and in plain language. ' +
       'Do not use markdown, headings, bullet symbols, or code formatting because the response is spoken aloud. ' +
       'Use the provided knowledge context when it is relevant. If the answer is not in the context, say so briefly and ask a useful follow-up question.';
+    const campaignInstruction = this.campaignContext
+      ? [
+          'This is an outbound campaign call.',
+          'Your job is to share the campaign message, answer questions, collect useful feedback, and respect opt-out requests immediately.',
+          this.campaignContext.campaignPrompt
+            ? `Campaign instructions:\n${this.campaignContext.campaignPrompt}`
+            : '',
+          `Recipient variables:\n${JSON.stringify(this.campaignContext.variables)}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : '';
 
     return [
       this.agent.systemPrompt.trim(),
       voiceConstraint,
+      campaignInstruction,
       knowledgeContext
         ? `Knowledge context for this agent and organization:\n${knowledgeContext}`
         : '',

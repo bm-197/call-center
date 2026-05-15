@@ -14,6 +14,12 @@ type AriOriginateClient = {
       variables?: { variables: Record<string, string> };
     }) => Promise<unknown>;
   };
+  endpoints?: {
+    get: (opts: {
+      tech: string;
+      resource: string;
+    }) => Promise<{ state?: string }>;
+  };
 };
 
 export async function dialCampaignRecipient(opts: {
@@ -41,6 +47,9 @@ export async function dialCampaignRecipient(opts: {
 
   const campaign = recipient.campaign;
   const callerNumber = campaign.phoneNumber?.number ?? 'campaign';
+  const endpoint = outboundEndpoint(recipient.phoneNumber);
+  await assertDialEndpointReachable(ari, endpoint);
+
   const call = await prisma.call.create({
     data: {
       organizationId: campaign.organizationId,
@@ -66,7 +75,6 @@ export async function dialCampaignRecipient(opts: {
     },
   });
 
-  const endpoint = outboundEndpoint(recipient.phoneNumber);
   console.log(
     `[campaign] dialing recipient ${recipient.id} (${recipient.phoneNumber}) via ${endpoint}`,
   );
@@ -99,6 +107,30 @@ export async function dialCampaignRecipient(opts: {
   }
 }
 
+async function assertDialEndpointReachable(
+  ari: AriOriginateClient,
+  endpoint: string,
+) {
+  const parsed = parseSimplePjsipEndpoint(endpoint);
+  if (!parsed || !ari.endpoints?.get) return;
+
+  try {
+    const info = await ari.endpoints.get(parsed);
+    if (info.state === 'offline') {
+      throw new AppError(
+        409,
+        `SIP endpoint ${endpoint} is offline. Open Linphone and re-register extension ${parsed.resource}.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(
+      409,
+      `SIP endpoint ${endpoint} is not registered or reachable from Asterisk`,
+    );
+  }
+}
+
 function outboundEndpoint(phoneNumber: string): string {
   const specific =
     process.env[`OUTBOUND_DIAL_ENDPOINT_${endpointEnvKey(phoneNumber)}`];
@@ -117,4 +149,12 @@ function renderEndpointTemplate(template: string, phoneNumber: string): string {
 
 function endpointEnvKey(phoneNumber: string): string {
   return phoneNumber.replace(/[^A-Za-z0-9]/g, '_');
+}
+
+function parseSimplePjsipEndpoint(
+  endpoint: string,
+): { tech: string; resource: string } | null {
+  const match = /^PJSIP\/([^/]+)$/.exec(endpoint.trim());
+  if (!match) return null;
+  return { tech: 'PJSIP', resource: match[1] ?? '' };
 }
