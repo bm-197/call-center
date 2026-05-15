@@ -63,6 +63,39 @@ const CALLER_TRANSCRIPT_STT_ENABLED =
 const TRANSCRIPT_ALIGN_WAIT_MS = Number(
   process.env.CALLER_TRANSCRIPT_ALIGN_WAIT_MS ?? 2_500,
 );
+const DEFAULT_LIVE_VOICE = 'Puck';
+const LIVE_VOICES = new Set([
+  'Zephyr',
+  'Puck',
+  'Charon',
+  'Kore',
+  'Fenrir',
+  'Leda',
+  'Orus',
+  'Aoede',
+  'Callirrhoe',
+  'Autonoe',
+  'Enceladus',
+  'Iapetus',
+  'Umbriel',
+  'Algieba',
+  'Despina',
+  'Erinome',
+  'Algenib',
+  'Rasalgethi',
+  'Laomedeia',
+  'Achernar',
+  'Alnilam',
+  'Schedar',
+  'Gacrux',
+  'Pulcherrima',
+  'Achird',
+  'Zubenelgenubi',
+  'Vindemiatrix',
+  'Sadachbia',
+  'Sadaltager',
+  'Sulafat',
+]);
 
 export class ConversationLoop {
   private player: TtsPlayer;
@@ -73,8 +106,6 @@ export class ConversationLoop {
   private closed = false;
   private currentGeminiUserText = '';
   private currentAssistantText = '';
-  private callerTranscriptSource: 'stt' | 'gemini' =
-    CALLER_TRANSCRIPT_STT_ENABLED ? 'stt' : 'gemini';
   private pendingCallerTurns: ConversationTranscriptTurn[] = [];
   private pendingAssistantTurn: ConversationTranscriptTurn | null = null;
   private pendingAssistantTimer: NodeJS.Timeout | null = null;
@@ -123,7 +154,7 @@ export class ConversationLoop {
   private startCallerTranscriptStream(): void {
     if (!CALLER_TRANSCRIPT_STT_ENABLED) {
       console.log(
-        '[conv] caller transcript STT disabled; using Gemini Live transcript fallback',
+        '[conv] caller transcript STT disabled; saved caller transcript will be omitted',
       );
       return;
     }
@@ -158,7 +189,6 @@ export class ConversationLoop {
         if (this.callerStt === stt) {
           this.callerStt = null;
         }
-        this.callerTranscriptSource = 'gemini';
       });
   }
 
@@ -171,6 +201,7 @@ export class ConversationLoop {
     const inputTranscriptionConfig = {
       languageCodes: liveTranscriptionLanguageCodes(this.agent.language),
     };
+    const speechConfig = liveSpeechConfig(this.agent.ttsVoice);
     const callbacks = {
       onopen: () => console.log(`[conv] Gemini Live connected: ${LIVE_MODEL}`),
       onmessage: (message: Parameters<typeof this.handleLiveMessage>[0]) =>
@@ -190,6 +221,7 @@ export class ConversationLoop {
           inputAudioTranscription: inputTranscriptionConfig,
           outputAudioTranscription: {},
           realtimeInputConfig: liveRealtimeInputConfig(),
+          speechConfig,
           systemInstruction,
           ...toolConfig,
         },
@@ -207,6 +239,7 @@ export class ConversationLoop {
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           realtimeInputConfig: liveRealtimeInputConfig(),
+          speechConfig,
           systemInstruction,
           ...toolConfig,
         },
@@ -355,11 +388,6 @@ export class ConversationLoop {
   }
 
   private commitTranscriptTurn(): void {
-    const userText = this.currentGeminiUserText.trim();
-    if (this.callerTranscriptSource === 'gemini' && userText) {
-      this.queueCallerTranscript(userText);
-    }
-
     const assistantText = this.currentAssistantText.trim();
     if (assistantText) {
       this.queueAssistantTranscript(assistantText);
@@ -554,6 +582,18 @@ export function liveRealtimeInputConfig(): {
     automaticActivityDetection: {
       prefixPaddingMs: VAD_PREFIX_PADDING_MS,
       silenceDurationMs: VAD_SILENCE_DURATION_MS,
+    },
+  };
+}
+
+export function liveSpeechConfig(voiceName: string): {
+  voiceConfig: { prebuiltVoiceConfig: { voiceName: string } };
+} {
+  return {
+    voiceConfig: {
+      prebuiltVoiceConfig: {
+        voiceName: LIVE_VOICES.has(voiceName) ? voiceName : DEFAULT_LIVE_VOICE,
+      },
     },
   };
 }

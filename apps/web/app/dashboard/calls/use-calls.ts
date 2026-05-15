@@ -66,33 +66,53 @@ export type CallFilters = {
   search?: string;
 };
 
+export type PageParams = {
+  page?: number;
+  pageSize?: number;
+};
+
+export type PaginatedResponse<T> = {
+  items: T[];
+  nextCursor: string | null;
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+  } | null;
+};
+
+export type CallListParams = CallFilters & PageParams;
+
 export const callsKeys = {
   all: ['calls'] as const,
-  list: (filters?: CallFilters) => [...callsKeys.all, 'list', filters] as const,
+  list: (params?: CallListParams) =>
+    [...callsKeys.all, 'list', params] as const,
   detail: (id: string) => [...callsKeys.all, 'detail', id] as const,
   stats: () => [...callsKeys.all, 'stats'] as const,
 };
 
-function buildQuery(filters: CallFilters | undefined): string {
-  if (!filters) return '';
+function buildQuery(input: CallListParams | undefined): string {
+  if (!input) return '';
   const params = new URLSearchParams();
-  if (filters.status) params.set('status', filters.status);
-  if (filters.agentId) params.set('agentId', filters.agentId);
-  if (filters.direction) params.set('direction', filters.direction);
-  if (filters.handedOff !== undefined)
-    params.set('handedOff', String(filters.handedOff));
-  if (filters.search) params.set('search', filters.search);
+  if (input.status) params.set('status', input.status);
+  if (input.agentId) params.set('agentId', input.agentId);
+  if (input.direction) params.set('direction', input.direction);
+  if (input.handedOff !== undefined)
+    params.set('handedOff', String(input.handedOff));
+  if (input.search) params.set('search', input.search);
+  if (input.page) params.set('page', String(input.page));
+  if (input.pageSize) params.set('pageSize', String(input.pageSize));
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
 
-export function useCalls(filters?: CallFilters) {
+export function useCalls(params?: CallListParams) {
   return useQuery({
-    queryKey: callsKeys.list(filters),
+    queryKey: callsKeys.list(params),
     queryFn: () =>
-      api<{ items: CallListItem[]; nextCursor: string | null }>(
-        `/api/calls${buildQuery(filters)}`,
-      ),
+      api<PaginatedResponse<CallListItem>>(`/api/calls${buildQuery(params)}`),
+    placeholderData: (previous) => previous,
     refetchInterval: 5000, // live-ish updates while a call is in progress
   });
 }

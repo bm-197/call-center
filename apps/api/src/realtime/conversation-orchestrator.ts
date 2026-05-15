@@ -17,10 +17,7 @@ import { join } from 'node:path';
 import { prisma } from '@call-center/db';
 import { AudioBridge } from './audio-bridge.js';
 import { ConversationLoop } from './conversation-loop.js';
-import {
-  ensureCallerTranscriptAmharic,
-  toStoredTranscript,
-} from './transcript.js';
+import { toStoredTranscript } from './transcript.js';
 import { CallRecorder } from './call-recorder.js';
 import { r2UploadFile, R2_BUCKETS } from '../common/r2.js';
 import { finalizeCampaignRecipientFromCall } from '../modules/campaign/campaign.service.js';
@@ -73,7 +70,6 @@ type AriClient = {
 type CallState = {
   callId: string;
   organizationId: string;
-  agentLanguage: string;
   campaign?: {
     campaignId: string;
     recipientId: string;
@@ -205,7 +201,6 @@ async function handleStart(
   callsByChannel.set(channel.id, {
     callId: setup.callId,
     organizationId: setup.organizationId,
-    agentLanguage: setup.agent.language,
     ...(setup.campaignState ? { campaign: setup.campaignState } : {}),
     startedAt: Date.now(),
     bridge,
@@ -228,10 +223,7 @@ async function handleEnd(channel: AriChannel): Promise<void> {
   state.bridge.close();
 
   const duration = Math.floor((Date.now() - state.startedAt) / 1000);
-  const transcript = await ensureCallerTranscriptAmharic(
-    toStoredTranscript(state.loop.transcript),
-    state.agentLanguage,
-  );
+  const transcript = toStoredTranscript(state.loop.transcript);
 
   // Recording: finalize WAV on disk, upload to R2, then delete the temp
   // file. Uploads run in the background so the orchestrator can move on
