@@ -30,7 +30,6 @@ const MAX_DIRECT_CONTEXT_CHARS = Number(
 const SUMMARY_TARGET_CHARS = Number(
   process.env.GEMINI_LIVE_CONTEXT_SUMMARY_CHARS ?? 6_000,
 );
-const TRANSCRIPTION_LANGUAGE_CODE = 'am';
 
 export class ConversationLoop {
   private player: TtsPlayer;
@@ -162,6 +161,7 @@ export class ConversationLoop {
     }
 
     if (content.turnComplete) {
+      this.player.flush();
       this.commitTranscriptTurn();
     }
   }
