@@ -101,6 +101,9 @@ type CallSetup = {
   callId: string;
   organizationId: string;
   agent: AgentConfig;
+  callerNumber: string;
+  calleeNumber: string;
+  contactId?: string | null;
   campaignContext?: {
     openingMessage: string;
     campaignPrompt: string;
@@ -186,6 +189,12 @@ async function handleStart(
     bridge,
     setup.agent,
     setup.campaignContext ?? null,
+    {
+      callId: setup.callId,
+      contactId: setup.contactId ?? null,
+      callerNumber: setup.callerNumber,
+      calleeNumber: setup.calleeNumber,
+    },
   );
 
   const recorder = new CallRecorder(join(tmpdir(), `call-${setup.callId}.wav`));
@@ -275,11 +284,19 @@ async function prepareInboundCall(
 ): Promise<CallSetup | null> {
   const agent = await resolveAgent(calleeNumber);
   if (!agent) return null;
+  const contact = await prisma.contact.findFirst({
+    where: {
+      organizationId: agent.organizationId,
+      phoneNumber: callerNumber,
+    },
+    select: { id: true },
+  });
 
   const call = await prisma.call.create({
     data: {
       organizationId: agent.organizationId,
       agentId: agent.id,
+      contactId: contact?.id ?? null,
       direction: 'inbound',
       callerNumber,
       calleeNumber,
@@ -292,6 +309,9 @@ async function prepareInboundCall(
     callId: call.id,
     organizationId: agent.organizationId,
     agent,
+    callerNumber,
+    calleeNumber,
+    contactId: contact?.id ?? null,
   };
 }
 
@@ -336,6 +356,9 @@ async function prepareOutboundCall(callId: string): Promise<CallSetup | null> {
     callId: call.id,
     organizationId: call.organizationId,
     agent: campaign.agent,
+    callerNumber: call.callerNumber,
+    calleeNumber: call.calleeNumber,
+    contactId: recipient.contactId,
     campaignContext: {
       openingMessage: renderTemplate(campaign.openingMessage, variables),
       campaignPrompt: campaign.campaignPrompt,

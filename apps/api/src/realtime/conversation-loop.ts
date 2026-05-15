@@ -1,9 +1,18 @@
-import { GoogleGenAI, Modality, type Session } from '@google/genai';
+import {
+  GoogleGenAI,
+  Modality,
+  type FunctionCall,
+  type FunctionResponse,
+  type LiveServerMessage,
+  type Session,
+} from '@google/genai';
 import { prisma } from '@call-center/db';
 import type { ConversationTranscriptTurn } from './transcript.js';
 import { AudioBridge } from './audio-bridge.js';
 import { SttStream } from './stt-stream.js';
 import { TtsPlayer } from './tts-player.js';
+import { executeTool, getGeminiToolConfig } from '../tools/runtime.js';
+import type { ToolExecutionContext } from '../tools/registry.js';
 import {
   GEMINI_INPUT_SAMPLE_RATE,
   geminiPcm16Base64ToMulaw8k,
@@ -25,6 +34,12 @@ type CampaignContext = {
   openingMessage: string;
   campaignPrompt: string;
   variables: Record<string, string | number | boolean | null>;
+};
+type CallContext = {
+  callId: string;
+  contactId?: string | null;
+  callerNumber?: string | null;
+  calleeNumber?: string | null;
 };
 
 const LIVE_MODEL =
@@ -68,6 +83,7 @@ export class ConversationLoop {
     private readonly bridge: AudioBridge,
     private readonly agent: AgentConfig,
     private readonly campaignContext: CampaignContext | null = null,
+    private readonly callContext: CallContext | null = null,
   ) {
     this.player = new TtsPlayer(bridge);
   }
@@ -78,7 +94,11 @@ export class ConversationLoop {
 
     this.ai = new GoogleGenAI({ apiKey });
     const systemInstruction = await this.buildSystemInstruction();
-    this.session = await this.connectLiveSession(systemInstruction);
+    const tools = await getGeminiToolConfig({
+      organizationId: this.agent.organizationId,
+      agentId: this.agent.id,
+    });
+    this.session = await this.connectLiveSession(systemInstruction, tools);
     this.startCallerTranscriptStream();
 
     this.bridge.on('audio', (chunk: Buffer) => {
@@ -144,6 +164,7 @@ export class ConversationLoop {
 
   private async connectLiveSession(
     systemInstruction: string,
+    tools: Awaited<ReturnType<typeof getGeminiToolConfig>>,
   ): Promise<Session> {
     if (!this.ai) throw new Error('Gemini client is not initialized');
 
@@ -159,6 +180,7 @@ export class ConversationLoop {
       onclose: (event: { code: number; reason: string }) =>
         console.log(`[conv] Gemini Live closed: ${event.code} ${event.reason}`),
     };
+    const toolConfig = tools.length > 0 ? { tools } : {};
 
     try {
       return await this.ai.live.connect({
@@ -169,6 +191,7 @@ export class ConversationLoop {
           outputAudioTranscription: {},
           realtimeInputConfig: liveRealtimeInputConfig(),
           systemInstruction,
+          ...toolConfig,
         },
         callbacks,
       });
@@ -185,6 +208,7 @@ export class ConversationLoop {
           outputAudioTranscription: {},
           realtimeInputConfig: liveRealtimeInputConfig(),
           systemInstruction,
+          ...toolConfig,
         },
         callbacks,
       });
@@ -245,20 +269,11 @@ export class ConversationLoop {
     });
   }
 
-  private handleLiveMessage(message: {
-    serverContent?: {
-      interrupted?: boolean;
-      turnComplete?: boolean;
-      inputTranscription?: { text?: string; finished?: boolean };
-      outputTranscription?: { text?: string; finished?: boolean };
-      modelTurn?: {
-        parts?: Array<{
-          inlineData?: { data?: string; mimeType?: string };
-          text?: string;
-        }>;
-      };
-    };
-  }): void {
+  private handleLiveMessage(message: LiveServerMessage): void {
+    if (message.toolCall?.functionCalls?.length) {
+      void this.handleToolCalls(message.toolCall.functionCalls);
+    }
+
     const content = message.serverContent;
     if (!content) return;
 
@@ -288,6 +303,55 @@ export class ConversationLoop {
       this.player.flush();
       this.commitTranscriptTurn();
     }
+  }
+
+  private async handleToolCalls(functionCalls: FunctionCall[]): Promise<void> {
+    const responses: FunctionResponse[] = [];
+
+    for (const call of functionCalls) {
+      const name = call.name ?? '';
+      try {
+        if (!name) throw new Error('Tool call is missing a function name');
+        const result = await executeTool(name, call.args ?? {}, {
+          ...this.toolContext(),
+          source: 'voice',
+        });
+        responses.push({
+          ...(call.id ? { id: call.id } : {}),
+          name,
+          response: { output: result },
+        });
+        console.log(`[conv] tool ${name}: ${JSON.stringify(result)}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        responses.push({
+          ...(call.id ? { id: call.id } : {}),
+          name,
+          response: {
+            error: {
+              message,
+            },
+          },
+        });
+        console.error(`[conv] tool ${name || 'unknown'} failed:`, err);
+      }
+    }
+
+    if (responses.length > 0 && !this.closed) {
+      this.session?.sendToolResponse({ functionResponses: responses });
+    }
+  }
+
+  private toolContext(): ToolExecutionContext {
+    return {
+      organizationId: this.agent.organizationId,
+      agentId: this.agent.id,
+      callId: this.callContext?.callId ?? null,
+      contactId: this.callContext?.contactId ?? null,
+      callerNumber: this.callContext?.callerNumber ?? null,
+      calleeNumber: this.callContext?.calleeNumber ?? null,
+      source: 'voice',
+    };
   }
 
   private commitTranscriptTurn(): void {
@@ -370,6 +434,10 @@ export class ConversationLoop {
       'This is a live phone call. Speak naturally, briefly, and in plain language. ' +
       'Do not use markdown, headings, bullet symbols, or code formatting because the response is spoken aloud. ' +
       'Use the provided knowledge context when it is relevant. If the answer is not in the context, say so briefly and ask a useful follow-up question.';
+    const toolConstraint =
+      'When the caller asks you to take an action, use the available tools instead of only saying you will do it. ' +
+      'If a tool returns confirmation_required, ask the caller to confirm the exact action in a short spoken sentence. ' +
+      'Only after the caller clearly confirms, call confirm_tool_action with the confirmationId. If the caller refuses or is unclear, call confirm_tool_action with confirmed false or ask one clarifying question.';
     const transcriptionConstraint = this.agent.language.startsWith('en')
       ? ''
       : 'The caller is expected to speak Amharic. Treat unclear caller audio as Amharic, and do not switch to Hindi, Chinese, Arabic, or other languages unless the caller clearly speaks that language.';
@@ -389,6 +457,7 @@ export class ConversationLoop {
     return [
       this.agent.systemPrompt.trim(),
       voiceConstraint,
+      toolConstraint,
       transcriptionConstraint,
       campaignInstruction,
       knowledgeContext
