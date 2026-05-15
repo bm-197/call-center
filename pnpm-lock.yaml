@@ -61,6 +61,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1006.0
         version: 3.1006.0
+      '@better-auth/agent-auth':
+        specifier: 0.4.5
+        version: 0.4.5(@better-auth/core@1.5.4(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(better-call@1.3.2(zod@4.3.6))(jose@6.2.1)(kysely@0.28.11)(nanostores@1.1.1))(better-auth@1.5.4(117ef71e8560916bf9f473232afec0a6))
       '@call-center/amharic':
         specifier: workspace:*
         version: link:../../packages/amharic
@@ -1592,6 +1595,15 @@ packages:
         integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==,
       }
 
+  '@better-auth/agent-auth@0.4.5':
+    resolution:
+      {
+        integrity: sha512-LOUkwaEtakK7AebSx32sfqqDGcivS0hoiUWN6Ud4w+xwewsY2EcuDaQJ3V4D8PyupsWr39V0BEZay3CLGeJxWw==,
+      }
+    peerDependencies:
+      '@better-auth/core': '>=1.4.0'
+      better-auth: '>=1.4.0'
+
   '@better-auth/core@1.5.4':
     resolution:
       {
@@ -2129,6 +2141,12 @@ packages:
       }
     engines: { node: '>=6' }
     hasBin: true
+
+  '@hexagon/base64@1.1.28':
+    resolution:
+      {
+        integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==,
+      }
 
   '@hono/node-server@1.19.11':
     resolution:
@@ -2872,6 +2890,12 @@ packages:
     resolution:
       {
         integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==,
+      }
+
+  '@levischuck/tiny-cbor@0.2.11':
+    resolution:
+      {
+        integrity: sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow==,
       }
 
   '@modelcontextprotocol/sdk@1.27.1':
@@ -3937,6 +3961,12 @@ packages:
       }
     engines: { node: '>= 10.0.0' }
 
+  '@peculiar/asn1-android@2.7.0':
+    resolution:
+      {
+        integrity: sha512-iD3VskhVQnM4nE3PN9cBdPTR7JrqZy3FYk+uD2CeG6DUqKoANqaEfx0f7izPmW+Qm5JBM35ek+viLCmjy18ByQ==,
+      }
+
   '@peculiar/asn1-cms@2.6.1':
     resolution:
       {
@@ -3985,6 +4015,12 @@ packages:
         integrity: sha512-xNLYLBFTBKkCzEZIw842BxytQQATQv+lDTCEMZ8C196iJcJJMBUZxrhSTxLaohMyKK8QlzRNTRkUmanucnDSqg==,
       }
 
+  '@peculiar/asn1-schema@2.7.0':
+    resolution:
+      {
+        integrity: sha512-W8ZfWzLmQnrcky+eh3tni4IozMdqBDiHWU0N+vve/UGjMaUs8c0L7A2oEdkBXS8rTpWDpK/aoI3DG/L/hxmxPg==,
+      }
+
   '@peculiar/asn1-x509-attr@2.6.1':
     resolution:
       {
@@ -3995,6 +4031,12 @@ packages:
     resolution:
       {
         integrity: sha512-O9jT5F1A2+t3r7C4VT7LYGXqkGLK7Kj1xFpz7U0isPrubwU5PbDoyYtx6MiGst29yq7pXN5vZbQFKRCP+lLZlA==,
+      }
+
+  '@peculiar/utils@2.0.3':
+    resolution:
+      {
+        integrity: sha512-+oL3HPFRIZ1St2K50lWCXiioIgSoxzz7R1J3uF6neO2yl1sgmpgY6XXJH4BdpoDkMWznQTeYF6oWNDZLCdQ4eQ==,
       }
 
   '@peculiar/x509@1.14.3':
@@ -5491,6 +5533,13 @@ packages:
       {
         integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==,
       }
+
+  '@simplewebauthn/server@13.3.0':
+    resolution:
+      {
+        integrity: sha512-MLHYFrYG8/wK2i+86XMhiecK72nMaHKKt4bo+7Q1TbuG9iGjlSdfkPWKO5ZFE/BX+ygCJ7pr8H/AJeyAj1EaTQ==,
+      }
+    engines: { node: '>=20.0.0' }
 
   '@sinclair/typebox@0.27.10':
     resolution:
@@ -17357,6 +17406,15 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
+  '@better-auth/agent-auth@0.4.5(@better-auth/core@1.5.4(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(better-call@1.3.2(zod@4.3.6))(jose@6.2.1)(kysely@0.28.11)(nanostores@1.1.1))(better-auth@1.5.4(117ef71e8560916bf9f473232afec0a6))':
+    dependencies:
+      '@better-auth/core': 1.5.4(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(better-call@1.3.2(zod@4.3.6))(jose@6.2.1)(kysely@0.28.11)(nanostores@1.1.1)
+      '@simplewebauthn/server': 13.3.0
+      better-auth: 1.5.4(117ef71e8560916bf9f473232afec0a6)
+      better-call: 1.3.2(zod@4.3.6)
+      jose: 6.2.1
+      zod: 4.3.6
+
   '@better-auth/core@1.5.4(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(better-call@1.3.2(zod@4.3.6))(jose@6.2.1)(kysely@0.28.11)(nanostores@1.1.1)':
     dependencies:
       '@better-auth/utils': 0.3.1
@@ -17649,6 +17707,8 @@ snapshots:
       long: 5.3.2
       protobufjs: 7.5.6
       yargs: 17.7.2
+
+  '@hexagon/base64@1.1.28': {}
 
   '@hono/node-server@1.19.11(hono@4.12.15)':
     dependencies:
@@ -18134,6 +18194,8 @@ snapshots:
   '@kurkle/color@0.3.4': {}
 
   '@leichtgewicht/ip-codec@2.0.5': {}
+
+  '@levischuck/tiny-cbor@0.2.11': {}
 
   '@modelcontextprotocol/sdk@1.27.1(zod@3.25.76)':
     dependencies:
@@ -19265,6 +19327,12 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.5.6
     optional: true
 
+  '@peculiar/asn1-android@2.7.0':
+    dependencies:
+      '@peculiar/asn1-schema': 2.7.0
+      asn1js: 3.0.7
+      tslib: 2.8.1
+
   '@peculiar/asn1-cms@2.6.1':
     dependencies:
       '@peculiar/asn1-schema': 2.6.0
@@ -19327,6 +19395,12 @@ snapshots:
       pvtsutils: 1.3.6
       tslib: 2.8.1
 
+  '@peculiar/asn1-schema@2.7.0':
+    dependencies:
+      '@peculiar/utils': 2.0.3
+      asn1js: 3.0.7
+      tslib: 2.8.1
+
   '@peculiar/asn1-x509-attr@2.6.1':
     dependencies:
       '@peculiar/asn1-schema': 2.6.0
@@ -19339,6 +19413,10 @@ snapshots:
       '@peculiar/asn1-schema': 2.6.0
       asn1js: 3.0.7
       pvtsutils: 1.3.6
+      tslib: 2.8.1
+
+  '@peculiar/utils@2.0.3':
+    dependencies:
       tslib: 2.8.1
 
   '@peculiar/x509@1.14.3':
@@ -20433,6 +20511,17 @@ snapshots:
   '@rspack/lite-tapable@1.1.0': {}
 
   '@sec-ant/readable-stream@0.4.1': {}
+
+  '@simplewebauthn/server@13.3.0':
+    dependencies:
+      '@hexagon/base64': 1.1.28
+      '@levischuck/tiny-cbor': 0.2.11
+      '@peculiar/asn1-android': 2.7.0
+      '@peculiar/asn1-ecc': 2.6.1
+      '@peculiar/asn1-rsa': 2.6.1
+      '@peculiar/asn1-schema': 2.6.0
+      '@peculiar/asn1-x509': 2.6.1
+      '@peculiar/x509': 1.14.3
 
   '@sinclair/typebox@0.27.10': {}
 
