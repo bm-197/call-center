@@ -29,7 +29,11 @@ export default async function DashboardLayout({
 
   return (
     <div className="bg-background min-h-screen">
-      <SidebarNav user={session.user} orgName={org?.name ?? 'Organization'} />
+      <SidebarNav
+        user={session.user}
+        orgName={org?.name ?? 'Organization'}
+        orgLogo={org?.logo ?? null}
+      />
       <div className="md:pl-60">
         <main className="mx-auto max-w-6xl px-6 py-8 lg:px-10 lg:py-10">
           {children}
