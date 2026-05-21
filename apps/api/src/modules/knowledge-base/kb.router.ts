@@ -3,7 +3,6 @@ import multer from 'multer';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { z } from 'zod';
 import { prisma } from '@call-center/db';
-import { chunkText, normalizeAmharic } from '@call-center/amharic';
 import {
   requireAuth,
   requireOrgMember,
@@ -15,8 +14,6 @@ import { R2_BUCKETS, r2Delete, r2Put } from '../../common/r2.js';
 const router = Router();
 
 router.use(requireAuth, requireOrgMember());
-
-const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://localhost:4003';
 
 const MAX_PDF_SIZE = 25 * 1024 * 1024; // 25 MB
 const upload = multer({
@@ -74,48 +71,19 @@ const sourceUpdate = z.object({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function ingestToRag(
-  sourceId: string,
-  content: string,
-): Promise<{ chunks: number }> {
-  const normalized = normalizeAmharic(content);
-  const chunks = chunkText(normalized, {
-    targetSize: 800,
-    maxSize: 1200,
-    overlap: 150,
-  });
-
-  if (chunks.length === 0) {
-    throw new AppError(400, 'Content produced no chunks. Add more text.');
-  }
-
-  const res = await fetch(`${RAG_SERVICE_URL}/ingest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      source_id: sourceId,
-      chunks: chunks.map((c) => ({
-        text: c.text,
-        metadata: { index: c.index, start: c.start, end: c.end },
-      })),
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new AppError(502, `RAG ingest failed: ${body || res.statusText}`);
-  }
-
-  const data = (await res.json()) as { chunks: number };
-  return { chunks: data.chunks };
+function sourceReadyData(content: string | null | undefined) {
+  const clean = content?.trim() ?? '';
+  return {
+    status: 'completed',
+    errorMessage: null,
+    chunkCount: clean ? 1 : 0,
+    tokenCount: estimateTokenCount(clean),
+  };
 }
 
-async function deleteFromRag(sourceId: string): Promise<void> {
-  await fetch(`${RAG_SERVICE_URL}/source/${sourceId}`, {
-    method: 'DELETE',
-  }).catch(() => {
-    // best effort — DB cascade also removes chunks
-  });
+function estimateTokenCount(content: string): number {
+  if (!content) return 0;
+  return Math.ceil(content.length / 4);
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
@@ -182,29 +150,12 @@ router.post('/', async (req, res, next) => {
         sourceContent: data.sourceContent ?? null,
         sourceUrl: data.sourceUrl ?? null,
         agentId: data.agentId,
-        status: 'processing',
+        ...sourceReadyData(data.sourceContent),
       },
+      include: { agent: { select: { id: true, name: true } } },
     });
 
-    try {
-      const { chunks } = await ingestToRag(created.id, data.sourceContent!);
-      const final = await prisma.knowledgeSource.findUnique({
-        where: { id: created.id },
-        include: { agent: { select: { id: true, name: true } } },
-      });
-      res.status(201).json({ ...final, chunkCount: chunks });
-    } catch (err) {
-      await prisma.knowledgeSource
-        .update({
-          where: { id: created.id },
-          data: {
-            status: 'failed',
-            errorMessage: err instanceof Error ? err.message : 'Ingest failed',
-          },
-        })
-        .catch(() => {});
-      throw err;
-    }
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }
@@ -271,14 +222,13 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         data: { fileUrl: key },
       });
 
-      // 5. Chunk + ingest into RAG.
-      const { chunks } = await ingestToRag(created.id, text);
-
-      const final = await prisma.knowledgeSource.findUnique({
+      // 5. Make the extracted text available to Gemini Live context.
+      const final = await prisma.knowledgeSource.update({
         where: { id: created.id },
+        data: { ...sourceReadyData(text) },
         include: { agent: { select: { id: true, name: true } } },
       });
-      res.status(201).json({ ...final, chunkCount: chunks });
+      res.status(201).json(final);
     } catch (err) {
       await prisma.knowledgeSource
         .update({
@@ -329,33 +279,9 @@ router.patch('/:id', async (req, res, next) => {
       where: { id: req.params.id },
       data: {
         ...stripUndefined(data),
-        ...(contentChanged && { status: 'processing' }),
+        ...(contentChanged && sourceReadyData(data.sourceContent)),
       },
     });
-
-    if (contentChanged && data.sourceContent) {
-      try {
-        await ingestToRag(updated.id, data.sourceContent);
-        const final = await prisma.knowledgeSource.findUnique({
-          where: { id: updated.id },
-          include: { agent: { select: { id: true, name: true } } },
-        });
-        res.json(final);
-        return;
-      } catch (err) {
-        await prisma.knowledgeSource
-          .update({
-            where: { id: updated.id },
-            data: {
-              status: 'failed',
-              errorMessage:
-                err instanceof Error ? err.message : 'Ingest failed',
-            },
-          })
-          .catch(() => {});
-        throw err;
-      }
-    }
 
     const fresh = await prisma.knowledgeSource.findUnique({
       where: { id: updated.id },
@@ -380,30 +306,13 @@ router.post('/:id/reindex', async (req, res, next) => {
       );
     }
 
-    await prisma.knowledgeSource.update({
+    const final = await prisma.knowledgeSource.update({
       where: { id: existing.id },
-      data: { status: 'processing', errorMessage: null },
+      data: sourceReadyData(existing.sourceContent),
+      include: { agent: { select: { id: true, name: true } } },
     });
 
-    try {
-      const { chunks } = await ingestToRag(existing.id, existing.sourceContent);
-      const final = await prisma.knowledgeSource.findUnique({
-        where: { id: existing.id },
-        include: { agent: { select: { id: true, name: true } } },
-      });
-      res.json({ ...final, chunkCount: chunks });
-    } catch (err) {
-      await prisma.knowledgeSource
-        .update({
-          where: { id: existing.id },
-          data: {
-            status: 'failed',
-            errorMessage: err instanceof Error ? err.message : 'Ingest failed',
-          },
-        })
-        .catch(() => {});
-      throw err;
-    }
+    res.json(final);
   } catch (err) {
     next(err);
   }
@@ -417,7 +326,6 @@ router.delete('/:id', async (req, res, next) => {
     });
     if (!existing) throw new AppError(404, 'Knowledge source not found');
 
-    await deleteFromRag(existing.id);
     if (existing.fileUrl) {
       await r2Delete(R2_BUCKETS.kb(), existing.fileUrl).catch(() => {});
     }

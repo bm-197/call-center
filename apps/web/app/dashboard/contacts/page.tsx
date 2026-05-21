@@ -19,6 +19,7 @@ import {
 import { PageHeader } from '../components/page-header';
 import { ConfirmDialog } from '../components/confirm-dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,6 +41,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +93,7 @@ export default function ContactsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Consent</TableHead>
                   <TableHead>Added</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
@@ -115,6 +124,20 @@ export default function ContactsPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {c.email ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            c.callConsentStatus === 'opted_in'
+                              ? 'default'
+                              : c.callConsentStatus === 'opted_out'
+                                ? 'destructive'
+                                : 'outline'
+                          }
+                          className="capitalize"
+                        >
+                          {c.callConsentStatus.replace('_', ' ')}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(c.createdAt).toLocaleDateString()}
@@ -251,6 +274,7 @@ function ContactDialog({
         phoneNumber: contact.phoneNumber,
         countryCode: contact.countryCode,
         notes: contact.notes ?? '',
+        callConsentStatus: contact.callConsentStatus,
       }
     : {
         firstName: '',
@@ -259,6 +283,7 @@ function ContactDialog({
         phoneNumber: '',
         countryCode: '+251',
         notes: '',
+        callConsentStatus: 'unknown',
       };
 
   const [form, setForm] = useState<ContactInput>(initial);
@@ -367,6 +392,28 @@ function ContactDialog({
               onChange={(e) => update_('notes', e.target.value)}
               disabled={pending}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="consent">Outbound call consent</Label>
+            <Select
+              value={form.callConsentStatus ?? 'unknown'}
+              onValueChange={(value) =>
+                update_(
+                  'callConsentStatus',
+                  value as ContactInput['callConsentStatus'],
+                )
+              }
+              disabled={pending}
+            >
+              <SelectTrigger id="consent">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unknown">Unknown</SelectItem>
+                <SelectItem value="opted_in">Opted in</SelectItem>
+                <SelectItem value="opted_out">Opted out</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button

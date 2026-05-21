@@ -13,6 +13,7 @@ import { contactRouter } from './modules/contact/contact.router.js';
 import { analyticsRouter } from './modules/analytics/analytics.router.js';
 import { queueRouter } from './modules/queue/queue.router.js';
 import { phoneNumberRouter } from './modules/phone-number/phone-number.router.js';
+import { campaignRouter } from './modules/campaign/campaign.router.js';
 import { sseRouter } from './realtime/sse.router.js';
 import { errorHandler } from './common/middleware/error-handler.js';
 
@@ -61,6 +62,7 @@ export function createApp() {
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/queue', queueRouter);
   app.use('/api/phone-numbers', phoneNumberRouter);
+  app.use('/api/campaigns', campaignRouter);
   app.use('/api/events', sseRouter);
 
   app.use(errorHandler);

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { connectAri } from './realtime/ari-client.js';
+import { startCampaignWorker } from './modules/campaign/campaign.queue.js';
 
 const PORT = process.env.PORT || 4000;
 const app = createApp();
@@ -12,6 +13,7 @@ app.listen(PORT, () => {
 // Connect to Asterisk in the background — failures are logged but don't
 // crash the API. Tests don't run main.ts so this only fires in dev/prod.
 connectAri();
+startCampaignWorker();
 
 // Warm the RAG embedding model so the first real call doesn't eat the
 // 20–30s SentenceTransformer load. Best-effort, non-blocking.

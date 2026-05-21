@@ -34,6 +34,7 @@ const contactInput = z.object({
     .max(1000)
     .nullish()
     .transform((v) => v ?? null),
+  callConsentStatus: z.enum(['unknown', 'opted_in', 'opted_out']).optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -52,8 +53,13 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const data = contactInput.parse(req.body);
+    const consentData = consentFields(data.callConsentStatus ?? 'unknown');
     const contact = await prisma.contact.create({
-      data: { ...data, organizationId: req.activeOrganizationId! },
+      data: {
+        ...data,
+        ...consentData,
+        organizationId: req.activeOrganizationId!,
+      },
     });
     res.status(201).json(contact);
   } catch (err) {
@@ -93,9 +99,13 @@ router.patch('/:id', async (req, res, next) => {
     });
     if (!existing) throw new AppError(404, 'Contact not found');
 
+    const consentData =
+      data.callConsentStatus !== undefined
+        ? consentFields(data.callConsentStatus)
+        : {};
     const contact = await prisma.contact.update({
       where: { id: req.params.id },
-      data: stripUndefined(data),
+      data: { ...stripUndefined(data), ...consentData },
     });
     res.json(contact);
   } catch (err) {
@@ -117,5 +127,33 @@ router.delete('/:id', async (req, res, next) => {
     next(err);
   }
 });
+
+function consentFields(status: 'unknown' | 'opted_in' | 'opted_out') {
+  if (status === 'opted_in') {
+    return {
+      callConsentStatus: status,
+      callConsentSource: 'manual',
+      callConsentAt: new Date(),
+      doNotCallAt: null,
+      doNotCallReason: null,
+    };
+  }
+  if (status === 'opted_out') {
+    return {
+      callConsentStatus: status,
+      callConsentSource: 'manual',
+      callConsentAt: new Date(),
+      doNotCallAt: new Date(),
+      doNotCallReason: 'Manual opt-out',
+    };
+  }
+  return {
+    callConsentStatus: status,
+    callConsentSource: null,
+    callConsentAt: null,
+    doNotCallAt: null,
+    doNotCallReason: null,
+  };
+}
 
 export { router as contactRouter };

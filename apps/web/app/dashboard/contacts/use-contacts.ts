@@ -10,6 +10,11 @@ export type Contact = {
   phoneNumber: string;
   countryCode: string;
   notes: string | null;
+  callConsentStatus: 'unknown' | 'opted_in' | 'opted_out';
+  callConsentSource: string | null;
+  callConsentAt: string | null;
+  doNotCallAt: string | null;
+  doNotCallReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -21,6 +26,7 @@ export type ContactInput = {
   phoneNumber: string;
   countryCode?: string;
   notes?: string | null;
+  callConsentStatus?: 'unknown' | 'opted_in' | 'opted_out';
 };
 
 export const contactsKeys = {
