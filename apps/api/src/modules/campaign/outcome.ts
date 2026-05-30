@@ -8,10 +8,18 @@ export type CampaignOutcome =
   | 'needs_human'
   | 'unknown';
 
-const client = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY ?? '',
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+let client: OpenAI | null = null;
+
+function getClient(): OpenAI | null {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+
+  client ??= new OpenAI({
+    apiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+  });
+  return client;
+}
 
 const OPT_OUT_PATTERNS = [
   /\b(stop|unsubscribe|remove me|do not call|don't call|dont call)\b/i,
@@ -67,12 +75,13 @@ export async function classifyCampaignOutcome(
   if (INTEREST_PATTERNS.some((p) => p.test(joined))) {
     return { outcome: 'interested', notes: 'Caller showed interest.' };
   }
-  if (!process.env.OPENROUTER_API_KEY || joined.trim().length === 0) {
+  const openRouter = getClient();
+  if (!openRouter || joined.trim().length === 0) {
     return { outcome: 'unknown', notes: null };
   }
 
   try {
-    const res = await client.chat.completions.create({
+    const res = await openRouter.chat.completions.create({
       model: process.env.CAMPAIGN_OUTCOME_MODEL ?? 'openai/gpt-4o-mini',
       messages: [
         {
