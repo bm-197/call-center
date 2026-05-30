@@ -60,9 +60,15 @@ const tools = [
   { value: 'calendar_create_event', label: 'Create appointment' },
 ];
 
+const TOOL_ACTIVITY_PAGE_SIZE = 25;
+
 export default function IntegrationsPage() {
   const integrations = useIntegrations();
-  const invocations = useToolInvocations();
+  const [activityPage, setActivityPage] = useState(1);
+  const invocations = useToolInvocations({
+    page: activityPage,
+    pageSize: TOOL_ACTIVITY_PAGE_SIZE,
+  });
   const agents = useAgents();
   const save = useSaveIntegration();
   const testTool = useTestTool();
@@ -86,6 +92,10 @@ export default function IntegrationsPage() {
   const [toolName, setToolName] = useState('waitlist_add_contact');
   const [argsJson, setArgsJson] = useState(formatJson(toolArgs(toolName)));
   const [testResult, setTestResult] = useState<unknown>(null);
+  const invocationItems = invocations.data?.items ?? [];
+  const invocationPagination = invocations.data?.pagination;
+  const invocationTotal = invocationPagination?.total ?? 0;
+  const invocationPageCount = invocationPagination?.pageCount ?? 1;
 
   function onProviderChange(value: IntegrationProvider) {
     setProvider(value);
@@ -350,11 +360,11 @@ export default function IntegrationsPage() {
         <CardHeader>
           <CardTitle>Tool Activity</CardTitle>
           <CardDescription>
-            Loads on page open and manual refresh.
+            Recent tool executions for this workspace.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{invocations.data?.length ?? 0}</Badge>
+              <Badge variant="outline">{invocationTotal}</Badge>
               <Button
                 type="button"
                 variant="outline"
@@ -374,45 +384,77 @@ export default function IntegrationsPage() {
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : !invocations.data?.length ? (
+          ) : !invocationItems.length ? (
             <div className="text-muted-foreground py-8 text-sm">
               No tool calls yet.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tool</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invocations.data.slice(0, 25).map((invocation) => (
-                  <TableRow key={invocation.id}>
-                    <TableCell className="font-mono text-xs">
-                      {invocation.toolName}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(invocation.status)}>
-                        {invocation.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{invocation.source}</TableCell>
-                    <TableCell>
-                      {resultProvider(invocation.result) ??
-                        invocation.externalProvider ??
-                        '—'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(invocation.createdAt).toLocaleTimeString()}
-                    </TableCell>
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tool</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Time</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {invocationItems.map((invocation) => (
+                    <TableRow key={invocation.id}>
+                      <TableCell className="font-mono text-xs">
+                        {invocation.toolName}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(invocation.status)}>
+                          {invocation.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{invocation.source}</TableCell>
+                      <TableCell>
+                        {resultProvider(invocation.result) ??
+                          invocation.externalProvider ??
+                          '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(invocation.createdAt).toLocaleTimeString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground text-sm">
+                  Page {activityPage} of {invocationPageCount} ·{' '}
+                  {invocationTotal} total
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={activityPage <= 1 || invocations.isFetching}
+                    onClick={() => setActivityPage((page) => page - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      activityPage >= invocationPageCount ||
+                      invocations.isFetching
+                    }
+                    onClick={() => setActivityPage((page) => page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

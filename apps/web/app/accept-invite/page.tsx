@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import {
   MailAdd01Icon,
 } from '@hugeicons/core-free-icons';
 import { authClient, useSession } from '@/lib/auth-client';
+import { AuthPageShell } from '@/components/auth-page-shell';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -21,6 +22,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+
+const inviteCardClass =
+  'rounded-[14px] border border-white/80 bg-card/95 py-0 shadow-[0_28px_70px_rgba(20,184,166,0.18),0_8px_24px_rgba(5,150,105,0.12)] ring-1 ring-foreground/10 backdrop-blur-xl';
+const inviteHeaderClass = 'px-11 pt-12 pb-2 text-left';
+const inviteTitleClass =
+  'text-[26px] font-semibold tracking-[-0.04em] text-foreground';
+const invitePrimaryButtonClass =
+  'h-12 w-full rounded-[7px] text-[15px] font-semibold shadow-[0_8px_18px_rgba(20,184,166,0.18)]';
+const inviteSecondaryButtonClass =
+  'h-12 w-full rounded-[7px] border-input bg-white text-[15px] font-semibold text-foreground shadow-[0_1px_1px_rgba(15,23,42,0.02)] hover:bg-muted/60 hover:text-foreground';
 
 type Invitation = {
   id: string;
@@ -38,7 +49,7 @@ type Phase =
   | { kind: 'loading' }
   | { kind: 'missing-id' }
   | { kind: 'load-error'; message: string }
-  | { kind: 'needs-auth'; invitation: Invitation }
+  | { kind: 'needs-auth' }
   | { kind: 'wrong-account'; invitation: Invitation; signedInAs: string }
   | { kind: 'ready'; invitation: Invitation }
   | { kind: 'already-accepted'; invitation: Invitation }
@@ -62,6 +73,7 @@ function AcceptInviteInner() {
   const invitationId = params.get('id');
 
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  const acceptingInvitationIdRef = useRef<string | null>(null);
 
   // Fetch invitation status
   useEffect(() => {
@@ -72,6 +84,20 @@ function AcceptInviteInner() {
 
     let cancelled = false;
     (async () => {
+      if (acceptingInvitationIdRef.current === invitationId) {
+        return;
+      }
+
+      if (sessionPending) {
+        setPhase({ kind: 'loading' });
+        return;
+      }
+
+      if (!session) {
+        setPhase({ kind: 'needs-auth' });
+        return;
+      }
+
       try {
         const { data, error } = await authClient.organization.getInvitation({
           query: { id: invitationId },
@@ -98,15 +124,6 @@ function AcceptInviteInner() {
           new Date(invitation.expiresAt) < new Date()
         ) {
           setPhase({ kind: 'expired', invitation });
-          return;
-        }
-        // pending — decide based on auth state
-        if (sessionPending) {
-          setPhase({ kind: 'loading' });
-          return;
-        }
-        if (!session) {
-          setPhase({ kind: 'needs-auth', invitation });
           return;
         }
         if (
@@ -137,11 +154,13 @@ function AcceptInviteInner() {
 
   async function accept() {
     if (phase.kind !== 'ready') return;
+    acceptingInvitationIdRef.current = phase.invitation.id;
     setPhase({ kind: 'accepting', invitation: phase.invitation });
     const { error } = await authClient.organization.acceptInvitation({
       invitationId: phase.invitation.id,
     });
     if (error) {
+      acceptingInvitationIdRef.current = null;
       toast.error(error.message ?? 'Failed to accept');
       setPhase({ kind: 'ready', invitation: phase.invitation });
       return;
@@ -155,11 +174,9 @@ function AcceptInviteInner() {
   }
 
   return (
-    <div className="bg-background flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <Body phase={phase} invitationId={invitationId} onAccept={accept} />
-      </div>
-    </div>
+    <AuthPageShell>
+      <Body phase={phase} invitationId={invitationId} onAccept={accept} />
+    </AuthPageShell>
   );
 }
 
@@ -174,13 +191,14 @@ function Body({
 }) {
   if (phase.kind === 'loading') {
     return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-2/3" />
+      <Card className={inviteCardClass}>
+        <CardHeader className={inviteHeaderClass}>
+          <Skeleton className="h-8 w-2/3" />
           <Skeleton className="h-4 w-full" />
         </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
+        <CardContent className="space-y-3 px-11 pt-7 pb-11">
+          <Skeleton className="h-12 w-full rounded-[7px]" />
+          <Skeleton className="h-12 w-full rounded-[7px]" />
         </CardContent>
       </Card>
     );
@@ -193,7 +211,11 @@ function Body({
         title="Invalid invitation link"
         description="This link is missing an invitation id. Ask the inviter to send a fresh invitation."
         cta={
-          <Button asChild variant="outline" className="w-full">
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -208,7 +230,11 @@ function Body({
         title="Couldn't load invitation"
         description={phase.message}
         cta={
-          <Button asChild variant="outline" className="w-full">
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -223,7 +249,7 @@ function Body({
         title="Invitation already accepted"
         description={`You're already a member of ${phase.invitation.organizationName ?? 'this organization'}. Open your dashboard to continue.`}
         cta={
-          <Button asChild className="w-full">
+          <Button asChild className={invitePrimaryButtonClass}>
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -238,7 +264,11 @@ function Body({
         title="Invitation expired"
         description="This invitation is no longer valid. Ask the inviter to send a fresh one."
         cta={
-          <Button asChild variant="outline" className="w-full">
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -253,7 +283,11 @@ function Body({
         title="Invitation cancelled"
         description="The inviter cancelled this invitation. Ask them to send a new one if you should still join."
         cta={
-          <Button asChild variant="outline" className="w-full">
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -262,32 +296,38 @@ function Body({
   }
 
   if (phase.kind === 'needs-auth') {
+    const redirectTo = invitationId
+      ? `/accept-invite?id=${encodeURIComponent(invitationId)}`
+      : '/accept-invite';
+    const encodedRedirect = encodeURIComponent(redirectTo);
+
     return (
-      <Card>
-        <CardHeader className="space-y-2 text-center">
-          <Icon tone="info" />
-          <CardTitle className="text-2xl">You&apos;re invited</CardTitle>
+      <Card className={inviteCardClass}>
+        <CardHeader className={inviteHeaderClass}>
+          <div className="mb-5">
+            <Icon tone="info" align="left" />
+          </div>
+          <CardTitle className={inviteTitleClass}>
+            You&apos;re invited
+          </CardTitle>
           <CardDescription>
-            Join{' '}
-            <strong>
-              {phase.invitation.organizationName ?? 'the organization'}
-            </strong>{' '}
-            as {phase.invitation.role}. Sign in or create an account with{' '}
-            <strong>{phase.invitation.email}</strong> to accept.
+            Sign in or create an account to view and accept this invitation.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="flex flex-col gap-2">
-          <Button asChild className="w-full">
-            <Link href={`/sign-up?redirect=/accept-invite?id=${invitationId}`}>
+        <CardContent className="space-y-3 px-11 pt-7 pb-11">
+          <Button asChild className={invitePrimaryButtonClass}>
+            <Link href={`/sign-up?redirect=${encodedRedirect}`}>
               Create account
             </Link>
           </Button>
-          <Button asChild variant="outline" className="w-full">
-            <Link href={`/sign-in?redirect=/accept-invite?id=${invitationId}`}>
-              Sign in
-            </Link>
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
+            <Link href={`/sign-in?redirect=${encodedRedirect}`}>Sign in</Link>
           </Button>
-        </CardFooter>
+        </CardContent>
       </Card>
     );
   }
@@ -299,7 +339,11 @@ function Body({
         title="Wrong account"
         description={`This invitation was sent to ${phase.invitation.email}, but you're signed in as ${phase.signedInAs}. Sign out and try again with the correct account.`}
         cta={
-          <Button asChild variant="outline" className="w-full">
+          <Button
+            asChild
+            variant="outline"
+            className={inviteSecondaryButtonClass}
+          >
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         }
@@ -311,24 +355,35 @@ function Body({
   const accepting = phase.kind === 'accepting';
   const accepted = phase.kind === 'accepted';
   return (
-    <Card>
-      <CardHeader className="space-y-2 text-center">
-        <Icon tone="info" />
-        <CardTitle className="text-2xl">
+    <Card className={inviteCardClass}>
+      <CardHeader className={inviteHeaderClass}>
+        <div className="mb-5">
+          <Icon tone={accepted ? 'success' : 'info'} align="left" />
+        </div>
+        <CardTitle className={inviteTitleClass}>
           Join {phase.invitation.organizationName ?? 'this organization'}
         </CardTitle>
         <CardDescription>
-          You&apos;ve been invited as <strong>{phase.invitation.role}</strong>.
+          You&apos;ve been invited as{' '}
+          <strong className="text-foreground">{phase.invitation.role}</strong>.
         </CardDescription>
       </CardHeader>
-      <CardFooter>
+      <CardContent className="px-11 pt-7 pb-11">
         <Button
-          className="w-full"
+          className={invitePrimaryButtonClass}
           onClick={onAccept}
           disabled={accepting || accepted}
         >
           {accepted ? 'Joined ✓' : accepting ? 'Joining…' : 'Accept invitation'}
         </Button>
+      </CardContent>
+      <CardFooter className="justify-center rounded-b-[14px] bg-muted/50 px-11 py-7">
+        <p className="text-muted-foreground text-center text-sm">
+          Invitation for{' '}
+          <span className="font-semibold text-foreground">
+            {phase.invitation.email}
+          </span>
+        </p>
       </CardFooter>
     </Card>
   );
@@ -346,25 +401,35 @@ function StatusCard({
   cta: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardHeader className="space-y-2 text-center">
-        <Icon tone={tone} />
-        <CardTitle className="text-2xl">{title}</CardTitle>
+    <Card className={inviteCardClass}>
+      <CardHeader className={inviteHeaderClass}>
+        <div className="mb-5">
+          <Icon tone={tone} align="left" />
+        </div>
+        <CardTitle className={inviteTitleClass}>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardFooter>{cta}</CardFooter>
+      <CardContent className="px-11 pt-7 pb-11">{cta}</CardContent>
     </Card>
   );
 }
 
-function Icon({ tone }: { tone: 'success' | 'warning' | 'info' }) {
+function Icon({
+  tone,
+  align = 'center',
+}: {
+  tone: 'success' | 'warning' | 'info';
+  align?: 'left' | 'center';
+}) {
   const cfg = {
     success: { icon: CheckmarkCircle02Icon, className: 'text-emerald-600' },
     warning: { icon: AlertCircleIcon, className: 'text-amber-600' },
-    info: { icon: MailAdd01Icon, className: 'text-foreground' },
+    info: { icon: MailAdd01Icon, className: 'text-primary' },
   }[tone];
   return (
-    <div className="bg-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+    <div
+      className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 ${align === 'center' ? 'mx-auto' : ''}`}
+    >
       <HugeiconsIcon
         icon={cfg.icon}
         size={22}

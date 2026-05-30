@@ -21,6 +21,12 @@ const grantInput = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
 });
 
+const invocationQuery = z.object({
+  callId: z.string().optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 router.get('/agents/:agentId', async (req, res, next) => {
   try {
     const agentId = param(req.params.agentId);
@@ -81,17 +87,31 @@ router.post(
 
 router.get('/invocations', async (req, res, next) => {
   try {
-    const callId =
-      typeof req.query.callId === 'string' ? req.query.callId : null;
-    const invocations = await prisma.toolInvocation.findMany({
-      where: {
-        organizationId: req.activeOrganizationId!,
-        ...(callId ? { callId } : {}),
+    const q = invocationQuery.parse(req.query);
+    const where = {
+      organizationId: req.activeOrganizationId!,
+      ...(q.callId ? { callId: q.callId } : {}),
+    };
+
+    const [total, invocations] = await Promise.all([
+      prisma.toolInvocation.count({ where }),
+      prisma.toolInvocation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+    ]);
+
+    res.json({
+      items: invocations,
+      pagination: {
+        page: q.page,
+        pageSize: q.pageSize,
+        total,
+        pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
       },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
     });
-    res.json(invocations);
   } catch (err) {
     next(err);
   }
