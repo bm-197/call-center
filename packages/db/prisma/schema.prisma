@@ -89,13 +89,20 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members          Member[]
-  agents           Agent[]
-  calls            Call[]
-  contacts         Contact[]
-  knowledgeSources KnowledgeSource[]
-  phoneNumbers     PhoneNumber[]
-  invitations      Invitation[]
+  members                  Member[]
+  agents                   Agent[]
+  calls                    Call[]
+  contacts                 Contact[]
+  knowledgeSources         KnowledgeSource[]
+  phoneNumbers             PhoneNumber[]
+  invitations              Invitation[]
+  campaigns                Campaign[]
+  campaignRecipients       CampaignRecipient[]
+  integrationConnections   IntegrationConnection[]
+  agentToolGrants          AgentToolGrant[]
+  toolInvocations          ToolInvocation[]
+  pendingToolConfirmations PendingToolConfirmation[]
+  appointments             Appointment[]
 
   @@map("organization")
 }
@@ -168,10 +175,15 @@ model Agent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  calls            Call[]
-  knowledgeSources KnowledgeSource[]
-  phoneNumbers     PhoneNumber[]
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calls                    Call[]
+  knowledgeSources         KnowledgeSource[]
+  phoneNumbers             PhoneNumber[]
+  campaigns                Campaign[]
+  toolGrants               AgentToolGrant[]
+  toolInvocations          ToolInvocation[]
+  pendingToolConfirmations PendingToolConfirmation[]
+  appointments             Appointment[]
 
   @@index([organizationId])
   @@map("agent")
@@ -180,10 +192,12 @@ model Agent {
 // ─── Calls ───
 
 model Call {
-  id             String  @id @default(cuid())
-  organizationId String
-  agentId        String
-  contactId      String?
+  id                  String  @id @default(cuid())
+  organizationId      String
+  agentId             String
+  contactId           String?
+  campaignId          String?
+  campaignRecipientId String?
 
   // Call details
   direction    String // inbound, outbound
@@ -216,33 +230,47 @@ model Call {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent                    Agent                     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  contact                  Contact?                  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign                 Campaign?                 @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignRecipient        CampaignRecipient?        @relation(fields: [campaignRecipientId], references: [id], onDelete: SetNull)
+  toolInvocations          ToolInvocation[]
+  pendingToolConfirmations PendingToolConfirmation[]
+  appointments             Appointment[]
 
   @@index([organizationId])
   @@index([agentId])
   @@index([contactId])
+  @@index([campaignId])
+  @@index([campaignRecipientId])
   @@map("call")
 }
 
 // ─── Contacts ───
 
 model Contact {
-  id             String   @id @default(cuid())
-  organizationId String
-  firstName      String?
-  lastName       String?
-  email          String?
-  phoneNumber    String
-  countryCode    String   @default("+251")
-  notes          String?
-  metadata       Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String    @id @default(cuid())
+  organizationId    String
+  firstName         String?
+  lastName          String?
+  email             String?
+  phoneNumber       String
+  countryCode       String    @default("+251")
+  notes             String?
+  metadata          Json?
+  callConsentStatus String    @default("unknown")
+  callConsentSource String?
+  callConsentAt     DateTime?
+  doNotCallAt       DateTime?
+  doNotCallReason   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  calls        Call[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calls              Call[]
+  campaignRecipients CampaignRecipient[]
+  appointments       Appointment[]
 
   @@unique([organizationId, phoneNumber])
   @@index([organizationId])
@@ -318,8 +346,322 @@ model PhoneNumber {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  campaigns    Campaign[]
 
   @@index([organizationId])
   @@index([agentId])
   @@map("phone_number")
+}
+
+// ─── Outbound Campaigns ───
+
+model Campaign {
+  id             String  @id @default(cuid())
+  organizationId String
+  agentId        String
+  phoneNumberId  String?
+  name           String
+  description    String?
+  status         String  @default("draft") // draft, running, paused, completed, canceled
+
+  openingMessage String
+  campaignPrompt String @default("")
+
+  maxConcurrency     Int    @default(2)
+  maxAttempts        Int    @default(2)
+  retryDelayMinutes  Int    @default(30)
+  callTimeoutSeconds Int    @default(30)
+  quietHoursStart    String @default("09:00")
+  quietHoursEnd      String @default("18:00")
+  timezone           String @default("Africa/Addis_Ababa")
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  canceledAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  phoneNumber  PhoneNumber?        @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  recipients   CampaignRecipient[]
+  calls        Call[]
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([phoneNumberId])
+  @@index([status])
+  @@map("campaign")
+}
+
+model CampaignRecipient {
+  id             String  @id @default(cuid())
+  organizationId String
+  campaignId     String
+  contactId      String?
+  phoneNumber    String
+  displayName    String?
+  email          String?
+  variables      Json?
+
+  status         String    @default("queued") // queued, dialing, in_call, completed, skipped, canceled
+  deliveryStatus String?
+  outcome        String?
+  outcomeNotes   String?
+  attemptCount   Int       @default(0)
+  nextAttemptAt  DateTime?
+  lastAttemptAt  DateTime?
+  lastCallId     String?
+  lastError      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  calls        Call[]
+
+  @@unique([campaignId, phoneNumber])
+  @@index([organizationId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([status])
+  @@index([nextAttemptAt])
+  @@map("campaign_recipient")
+}
+
+// ─── Tool Execution / Integrations ───
+
+model IntegrationConnection {
+  id             String  @id @default(cuid())
+  organizationId String
+  provider       String // google_calendar, notion, custom_api, mcp
+  name           String
+  status         String  @default("inactive") // inactive, active, error
+  config         Json?
+  credentials    Json?
+  errorMessage   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, name])
+  @@index([organizationId])
+  @@index([provider])
+  @@index([status])
+  @@map("integration_connection")
+}
+
+model AgentToolGrant {
+  id             String @id @default(cuid())
+  organizationId String
+  agentId        String
+  toolName       String
+  status         String @default("enabled") // enabled, disabled
+  config         Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, toolName])
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([toolName])
+  @@map("agent_tool_grant")
+}
+
+model ToolInvocation {
+  id               String  @id @default(cuid())
+  organizationId   String
+  agentId          String?
+  callId           String?
+  contactId        String?
+  toolName         String
+  source           String  @default("voice") // voice, mcp, agent-auth, api
+  status           String  @default("pending") // pending, pending_confirmation, success, error, canceled
+  arguments        Json?
+  result           Json?
+  errorMessage     String?
+  confirmationId   String?
+  externalProvider String?
+  externalId       String?
+  durationMs       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  call         Call?        @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([callId])
+  @@index([contactId])
+  @@index([toolName])
+  @@index([status])
+  @@map("tool_invocation")
+}
+
+model PendingToolConfirmation {
+  id             String   @id @default(cuid())
+  organizationId String
+  agentId        String
+  callId         String?
+  toolName       String
+  arguments      Json
+  prompt         String
+  status         String   @default("pending") // pending, confirmed, canceled, expired
+  expiresAt      DateTime
+  invocationId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  call         Call?        @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([callId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("pending_tool_confirmation")
+}
+
+model Appointment {
+  id               String   @id @default(cuid())
+  organizationId   String
+  agentId          String?
+  callId           String?
+  contactId        String?
+  title            String
+  description      String?
+  startsAt         DateTime
+  endsAt           DateTime
+  timezone         String   @default("Africa/Addis_Ababa")
+  status           String   @default("scheduled") // scheduled, canceled
+  externalProvider String?
+  externalId       String?
+  externalStatus   String   @default("not_configured") // not_configured, pending, synced, failed
+  metadata         Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  call         Call?        @relation(fields: [callId], references: [id], onDelete: SetNull)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([callId])
+  @@index([contactId])
+  @@index([startsAt])
+  @@map("appointment")
+}
+
+// ─── Agent Auth Protocol Tables ───
+
+model AuthAgentHost {
+  id                       String    @id @default(cuid())
+  name                     String?
+  userId                   String?
+  defaultCapabilities      String?
+  publicKey                String?
+  kid                      String?
+  jwksUrl                  String?
+  enrollmentTokenHash      String?
+  enrollmentTokenExpiresAt DateTime?
+  status                   String    @default("active")
+  activatedAt              DateTime?
+  expiresAt                DateTime?
+  lastUsedAt               DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([kid])
+  @@index([enrollmentTokenHash])
+  @@index([status])
+  @@map("auth_agent_host")
+}
+
+model AuthAgent {
+  id          String    @id @default(cuid())
+  name        String
+  userId      String?
+  hostId      String
+  status      String    @default("pending")
+  mode        String    @default("delegated")
+  publicKey   String
+  kid         String?
+  jwksUrl     String?
+  lastUsedAt  DateTime?
+  activatedAt DateTime?
+  expiresAt   DateTime?
+  metadata    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([hostId])
+  @@index([status])
+  @@index([kid])
+  @@map("auth_agent")
+}
+
+model AuthAgentCapabilityGrant {
+  id          String    @id @default(cuid())
+  agentId     String
+  capability  String
+  deniedBy    String?
+  grantedBy   String?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  status      String    @default("pending")
+  reason      String?
+  constraints String?
+
+  @@index([agentId])
+  @@index([capability])
+  @@index([grantedBy])
+  @@index([status])
+  @@map("auth_agent_capability_grant")
+}
+
+model AuthApprovalRequest {
+  id                         String    @id @default(cuid())
+  method                     String
+  agentId                    String?
+  hostId                     String?
+  userId                     String?
+  capabilities               String?
+  status                     String    @default("pending")
+  userCodeHash               String?
+  loginHint                  String?
+  bindingMessage             String?
+  clientNotificationToken    String?
+  clientNotificationEndpoint String?
+  deliveryMode               String?
+  interval                   Int
+  lastPolledAt               DateTime?
+  expiresAt                  DateTime
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  @@index([agentId])
+  @@index([hostId])
+  @@index([userId])
+  @@index([status])
+  @@map("auth_approval_request")
 }

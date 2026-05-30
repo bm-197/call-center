@@ -9,9 +9,6 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   output: 'standalone',
   outputFileTracingRoot: path.join(__dirname, '../../'),
-  experimental: {
-    turbopackFileSystemCacheForDev: true,
-  },
   transpilePackages: ['@call-center/shared'],
 };
 

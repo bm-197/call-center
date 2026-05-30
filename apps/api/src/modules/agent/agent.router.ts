@@ -26,7 +26,7 @@ const agentInput = z.object({
   llmModel: z.string().default('gpt-4o'),
   sttProvider: z.enum(['google', 'whisper']).default('google'),
   ttsProvider: z.enum(['google']).default('google'),
-  ttsVoice: z.string().default('am-ET-Wavenet-A'),
+  ttsVoice: z.string().default('Puck'),
   handoffEnabled: z.boolean().default(true),
   handoffConfidenceThreshold: z.number().min(0).max(1).default(0.3),
   handoffMaxFailedAttempts: z.number().int().min(1).max(10).default(3),

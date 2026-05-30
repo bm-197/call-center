@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": false
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "apps/web/**/*.{js,jsx,ts,tsx,json,jsonc,css}",
+      "apps/web/package.json",
+      "apps/web/tsconfig.json",
+      "apps/web/components.json",
+      "!apps/web/.next",
+      "!apps/web/out",
+      "!apps/web/next-env.d.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "useMediaCaption": "off"
+      },
+      "style": {
+        "useImportType": "off"
+      }
+    }
+  },
+  "assist": {
+    "enabled": false
+  }
+}

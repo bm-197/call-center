@@ -56,6 +56,7 @@ export class SttStream extends EventEmitter {
 
   close(): void {
     if (this.closed) return;
+    this.emitLastInterimAsFinal();
     this.closed = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.clearSilenceTimer();
@@ -167,6 +168,13 @@ export class SttStream extends EventEmitter {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
     }
+  }
+
+  private emitLastInterimAsFinal(): void {
+    const text = this.lastInterim.trim();
+    if (!text) return;
+    this.lastInterim = '';
+    this.emitFinal(text);
   }
 
   private emitFinal(text: string): void {

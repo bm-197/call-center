@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -12,6 +13,8 @@ import {
   UserMultiple02Icon,
   UserGroupIcon,
   BookOpen01Icon,
+  Megaphone01Icon,
+  Plug01Icon,
   Settings02Icon,
   Logout03Icon,
 } from '@hugeicons/core-free-icons';
@@ -59,6 +62,16 @@ const sections: {
         label: 'Contacts',
         icon: UserMultiple02Icon,
       },
+      {
+        href: '/dashboard/campaigns',
+        label: 'Campaigns',
+        icon: Megaphone01Icon,
+      },
+      {
+        href: '/dashboard/integrations',
+        label: 'Integrations',
+        icon: Plug01Icon,
+      },
     ],
   },
   {
@@ -73,21 +86,39 @@ const sections: {
 export function SidebarNav({
   user,
   orgName,
+  orgLogo,
 }: {
   user: { name: string | null; email: string };
   orgName: string;
+  orgLogo: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const logoSrc: string | null = !logoFailed && orgLogo ? orgLogo : null;
+  const showLogo = Boolean(logoSrc);
+  const initials = orgName.slice(0, 2).toUpperCase();
 
   return (
     <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r md:flex">
       <div className="px-4 py-5">
         <div className="flex items-center gap-2">
-          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold">
-            {orgName.slice(0, 2).toUpperCase()}
+          <div className="text-sidebar-primary-foreground relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-md text-sm font-semibold">
+            {showLogo ? (
+              <Image
+                src={logoSrc as string}
+                alt={`${orgName} logo`}
+                width={32}
+                height={32}
+                unoptimized
+                className="h-8 w-8 object-contain p-1"
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <span className="text-sidebar-accent-foreground">{initials}</span>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{orgName}</div>

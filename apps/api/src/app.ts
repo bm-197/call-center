@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth } from './modules/auth/auth.js';
 import { authRouter } from './modules/auth/auth.router.js';
 import { agentRouter } from './modules/agent/agent.router.js';
 import { callRouter } from './modules/call/call.router.js';
@@ -13,6 +15,10 @@ import { contactRouter } from './modules/contact/contact.router.js';
 import { analyticsRouter } from './modules/analytics/analytics.router.js';
 import { queueRouter } from './modules/queue/queue.router.js';
 import { phoneNumberRouter } from './modules/phone-number/phone-number.router.js';
+import { campaignRouter } from './modules/campaign/campaign.router.js';
+import { integrationRouter } from './modules/integration/integration.router.js';
+import { toolsRouter } from './modules/tools/tools.router.js';
+import { mcpRouter } from './modules/tools/mcp.router.js';
 import { sseRouter } from './realtime/sse.router.js';
 import { errorHandler } from './common/middleware/error-handler.js';
 
@@ -38,6 +44,9 @@ export function createApp() {
       credentials: true,
     }),
   );
+  // SSE must be mounted before compression; compressed event streams can buffer
+  // or fail to stay subscribed through proxies.
+  app.use('/api/events', sseRouter);
   app.use(compression());
   if (process.env.NODE_ENV !== 'test') {
     app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -45,6 +54,17 @@ export function createApp() {
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/.well-known/agent-configuration', async (req, res, next) => {
+    try {
+      const config = await auth.api.getAgentConfiguration({
+        headers: fromNodeHeaders(req.headers),
+      });
+      res.json(config);
+    } catch (err) {
+      next(err);
+    }
   });
 
   // Better Auth must be mounted BEFORE express.json() — it reads the raw body.
@@ -61,7 +81,10 @@ export function createApp() {
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/queue', queueRouter);
   app.use('/api/phone-numbers', phoneNumberRouter);
-  app.use('/api/events', sseRouter);
+  app.use('/api/campaigns', campaignRouter);
+  app.use('/api/integrations', integrationRouter);
+  app.use('/api/tools', toolsRouter);
+  app.use('/api/mcp', mcpRouter);
 
   app.use(errorHandler);
 

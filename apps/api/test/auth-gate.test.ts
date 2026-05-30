@@ -49,6 +49,9 @@ const ORG_SCOPED_ENDPOINTS: Endpoint[] = [
   { method: 'get', path: '/api/calls/some-id' },
   { method: 'get', path: '/api/calls/some-id/recording' },
 
+  { method: 'get', path: '/api/queue' },
+  { method: 'post', path: '/api/queue/some-id/accept' },
+
   { method: 'get', path: '/api/knowledge-base' },
   {
     method: 'post',
@@ -63,6 +66,37 @@ const ORG_SCOPED_ENDPOINTS: Endpoint[] = [
   },
   { method: 'post', path: '/api/knowledge-base/some-id/reindex' },
   { method: 'delete', path: '/api/knowledge-base/some-id' },
+
+  { method: 'get', path: '/api/tools/agents/some-id' },
+  {
+    method: 'patch',
+    path: '/api/tools/agents/some-id/waitlist_add_contact',
+    body: { status: 'enabled' },
+  },
+  {
+    method: 'post',
+    path: '/api/tools/agents/some-id/waitlist_add_contact/test',
+    body: { phoneNumber: '911', feature: 'beta' },
+  },
+  { method: 'get', path: '/api/tools/invocations' },
+
+  { method: 'get', path: '/api/integrations' },
+  {
+    method: 'post',
+    path: '/api/integrations',
+    body: {
+      provider: 'custom_api',
+      name: 'test',
+      config: { url: 'https://example.com' },
+    },
+  },
+  { method: 'get', path: '/api/integrations/some-id' },
+  {
+    method: 'patch',
+    path: '/api/integrations/some-id',
+    body: { status: 'inactive' },
+  },
+  { method: 'delete', path: '/api/integrations/some-id' },
 ];
 
 describe('auth gate: protected routes reject unauthenticated requests', () => {
