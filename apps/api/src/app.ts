@@ -44,6 +44,9 @@ export function createApp() {
       credentials: true,
     }),
   );
+  // SSE must be mounted before compression; compressed event streams can buffer
+  // or fail to stay subscribed through proxies.
+  app.use('/api/events', sseRouter);
   app.use(compression());
   if (process.env.NODE_ENV !== 'test') {
     app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -82,7 +85,6 @@ export function createApp() {
   app.use('/api/integrations', integrationRouter);
   app.use('/api/tools', toolsRouter);
   app.use('/api/mcp', mcpRouter);
-  app.use('/api/events', sseRouter);
 
   app.use(errorHandler);
 

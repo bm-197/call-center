@@ -145,7 +145,6 @@ export function useCampaigns(params?: CampaignListParams) {
         `/api/campaigns${buildCampaignQuery(params)}`,
       ),
     placeholderData: (previous) => previous,
-    refetchInterval: 10_000,
   });
 }
 
@@ -153,7 +152,6 @@ export function useCampaign(id: string) {
   return useQuery({
     queryKey: campaignKeys.detail(id),
     queryFn: () => api<Campaign>(`/api/campaigns/${id}`),
-    refetchInterval: (q) => (q.state.data?.status === 'running' ? 5000 : false),
   });
 }
 
@@ -161,7 +159,6 @@ export function useCampaignRecipients(id: string) {
   return useQuery({
     queryKey: campaignKeys.recipients(id),
     queryFn: () => api<CampaignRecipient[]>(`/api/campaigns/${id}/recipients`),
-    refetchInterval: 5000,
   });
 }
 

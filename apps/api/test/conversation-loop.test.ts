@@ -2,19 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   callerTranscriptLanguageCode,
   liveRealtimeInputConfig,
-  liveTranscriptionLanguageCodes,
 } from '../src/realtime/conversation-loop.js';
-
-describe('liveTranscriptionLanguageCodes', () => {
-  it('uses Amharic for Amharic and mixed-language agents', () => {
-    expect(liveTranscriptionLanguageCodes('am')).toEqual(['am']);
-    expect(liveTranscriptionLanguageCodes('am+en')).toEqual(['am']);
-  });
-
-  it('uses English only for English agents', () => {
-    expect(liveTranscriptionLanguageCodes('en')).toEqual(['en-US']);
-  });
-});
 
 describe('liveRealtimeInputConfig', () => {
   it('keeps short pauses inside one caller turn', () => {

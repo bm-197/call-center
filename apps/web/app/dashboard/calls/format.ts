@@ -59,6 +59,54 @@ export function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+export function formatHandoffReason(reason: string | null): string {
+  const value = reason?.trim();
+  if (!value) return 'ደዋዩ ከሰው ወኪል ጋር መነጋገር ጠይቋል።';
+  if (containsEthiopic(value)) return value;
+
+  const normalized = value.toLowerCase();
+  if (normalized.includes('english') && normalized.includes('amharic')) {
+    return 'ደዋዩ እንግሊዝኛ መናገር ይፈልጋል፣ ነገር ግን የኤጀንቱ መመሪያዎች በአማርኛ ብቻ ናቸው።';
+  }
+  if (
+    normalized.includes('outside') ||
+    normalized.includes('cannot be resolved') ||
+    normalized.includes('available tools') ||
+    normalized.includes('knowledge')
+  ) {
+    return 'የደዋዩ ጥያቄ በኤጀንቱ ያለው መረጃ ወይም መሳሪያ ሊፈታ አይችልም።';
+  }
+  if (
+    normalized.includes('person') ||
+    normalized.includes('human') ||
+    normalized.includes('agent') ||
+    normalized.includes('automated system')
+  ) {
+    return 'ደዋዩ ከራስ-ሰር ስርዓቱ ይልቅ ከሰው ወኪል ጋር መነጋገር ይፈልጋል።';
+  }
+
+  return 'ደዋዩ ጥሪውን ወደ ሰው ወኪል እንዲተላለፍ ጠይቋል።';
+}
+
+export function formatHandoffRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 30) return 'አሁን ተላልፏል';
+  if (sec < 60) return `ከ${sec} ሰከንድ በፊት ተላልፏል`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `ከ${min} ደቂቃ በፊት ተላልፏል`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `ከ${hr} ሰዓት በፊት ተላልፏል`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `ከ${day} ቀን በፊት ተላልፏል`;
+  return `${new Date(iso).toLocaleDateString('am-ET')} ተላልፏል`;
+}
+
+function containsEthiopic(value: string): boolean {
+  return /[\u1200-\u137F]/.test(value);
+}
+
 export function formatPhone(num: string): string {
   // Light formatting for Ethiopian numbers (+251 9XX XXX XXX)
   if (num.startsWith('+251') && num.length >= 13) {

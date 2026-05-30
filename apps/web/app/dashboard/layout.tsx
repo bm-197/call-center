@@ -6,6 +6,7 @@ import {
 } from '@/lib/server-auth';
 import { SidebarNav } from './components/sidebar-nav';
 import { ResolveActiveOrg } from './components/resolve-active-org';
+import { DashboardEvents } from './components/dashboard-events';
 
 export default async function DashboardLayout({
   children,
@@ -26,9 +27,11 @@ export default async function DashboardLayout({
   }
 
   const org = await getActiveOrganization();
+  const organizationId = org?.id ?? session.session.activeOrganizationId;
 
   return (
     <div className="bg-background min-h-screen">
+      {organizationId && <DashboardEvents organizationId={organizationId} />}
       <SidebarNav
         user={session.user}
         orgName={org?.name ?? 'Organization'}

@@ -33,7 +33,13 @@ router.get('/overview', async (req, res, next) => {
         where: {
           organizationId: orgId,
           status: {
-            in: ['ringing', 'in_progress', 'ai_handling', 'human_handling'],
+            in: [
+              'ringing',
+              'in_progress',
+              'ai_handling',
+              'queued',
+              'human_handling',
+            ],
           },
         },
       }),

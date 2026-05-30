@@ -2,6 +2,7 @@ import {
   GoogleGenAI,
   Modality,
   type FunctionCall,
+  type FunctionDeclaration,
   type FunctionResponse,
   type LiveServerMessage,
   type Session,
@@ -19,6 +20,7 @@ import {
   mulaw8kToGeminiPcm16Base64,
   parsePcmRate,
 } from './live-audio-codec.js';
+import { synthesizeMulaw } from './tts.js';
 
 type AgentConfig = {
   id: string;
@@ -27,6 +29,8 @@ type AgentConfig = {
   systemPrompt: string;
   llmModel: string;
   ttsVoice: string;
+  handoffEnabled: boolean;
+  handoffMessage: string;
 };
 
 type Transcript = ConversationTranscriptTurn[];
@@ -40,6 +44,13 @@ type CallContext = {
   contactId?: string | null;
   callerNumber?: string | null;
   calleeNumber?: string | null;
+};
+type HandoffRequest = {
+  reason: string;
+  message: string;
+};
+type ConversationLoopOptions = {
+  onHandoffRequested?: (request: HandoffRequest) => Promise<void> | void;
 };
 
 const LIVE_MODEL =
@@ -63,6 +74,7 @@ const CALLER_TRANSCRIPT_STT_ENABLED =
 const TRANSCRIPT_ALIGN_WAIT_MS = Number(
   process.env.CALLER_TRANSCRIPT_ALIGN_WAIT_MS ?? 2_500,
 );
+const HANDOFF_TOOL_NAME = 'request_human_handoff';
 const DEFAULT_LIVE_VOICE = 'Puck';
 const LIVE_VOICES = new Set([
   'Zephyr',
@@ -96,6 +108,30 @@ const LIVE_VOICES = new Set([
   'Sadaltager',
   'Sulafat',
 ]);
+const HANDOFF_TOOL_DECLARATION = {
+  name: HANDOFF_TOOL_NAME,
+  description:
+    'Request transfer to a human agent when the caller asks for a person, the request is outside your available knowledge or tools, or you cannot safely complete the task.',
+  parametersJsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      reason: {
+        type: 'string',
+        description:
+          'Short Amharic reason for the handoff, suitable for the human agent dashboard.',
+      },
+    },
+    required: ['reason'],
+  },
+  responseJsonSchema: {
+    type: 'object',
+    properties: {
+      status: { type: 'string' },
+      reason: { type: 'string' },
+    },
+  },
+} satisfies FunctionDeclaration;
 
 export class ConversationLoop {
   private player: TtsPlayer;
@@ -109,12 +145,14 @@ export class ConversationLoop {
   private pendingCallerTurns: ConversationTranscriptTurn[] = [];
   private pendingAssistantTurn: ConversationTranscriptTurn | null = null;
   private pendingAssistantTimer: NodeJS.Timeout | null = null;
+  private handoffRequested = false;
 
   constructor(
     private readonly bridge: AudioBridge,
     private readonly agent: AgentConfig,
     private readonly campaignContext: CampaignContext | null = null,
     private readonly callContext: CallContext | null = null,
+    private readonly options: ConversationLoopOptions = {},
   ) {
     this.player = new TtsPlayer(bridge);
   }
@@ -125,10 +163,13 @@ export class ConversationLoop {
 
     this.ai = new GoogleGenAI({ apiKey });
     const systemInstruction = await this.buildSystemInstruction();
-    const tools = await getGeminiToolConfig({
-      organizationId: this.agent.organizationId,
-      agentId: this.agent.id,
-    });
+    const tools = withInternalHandoffTool(
+      await getGeminiToolConfig({
+        organizationId: this.agent.organizationId,
+        agentId: this.agent.id,
+      }),
+      this.agent.handoffEnabled,
+    );
     this.session = await this.connectLiveSession(systemInstruction, tools);
     this.startCallerTranscriptStream();
 
@@ -198,9 +239,6 @@ export class ConversationLoop {
   ): Promise<Session> {
     if (!this.ai) throw new Error('Gemini client is not initialized');
 
-    const inputTranscriptionConfig = {
-      languageCodes: liveTranscriptionLanguageCodes(this.agent.language),
-    };
     const speechConfig = liveSpeechConfig(this.agent.ttsVoice);
     const callbacks = {
       onopen: () => console.log(`[conv] Gemini Live connected: ${LIVE_MODEL}`),
@@ -213,43 +251,29 @@ export class ConversationLoop {
     };
     const toolConfig = tools.length > 0 ? { tools } : {};
 
-    try {
-      return await this.ai.live.connect({
-        model: LIVE_MODEL,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: inputTranscriptionConfig,
-          outputAudioTranscription: {},
-          realtimeInputConfig: liveRealtimeInputConfig(),
-          speechConfig,
-          systemInstruction,
-          ...toolConfig,
-        },
-        callbacks,
-      });
-    } catch (err) {
-      console.warn(
-        '[conv] Gemini Live rejected language-specific transcription config; retrying with auto transcription:',
-        err,
-      );
-      return this.ai.live.connect({
-        model: LIVE_MODEL,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          realtimeInputConfig: liveRealtimeInputConfig(),
-          speechConfig,
-          systemInstruction,
-          ...toolConfig,
-        },
-        callbacks,
-      });
-    }
+    return this.ai.live.connect({
+      model: LIVE_MODEL,
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        realtimeInputConfig: liveRealtimeInputConfig(),
+        speechConfig,
+        systemInstruction,
+        ...toolConfig,
+      },
+      callbacks,
+    });
   }
 
   private sendCallerAudio(chunk: Buffer): void {
-    if (this.closed || !this.session || chunk.length === 0) return;
+    if (
+      this.closed ||
+      this.handoffRequested ||
+      !this.session ||
+      chunk.length === 0
+    )
+      return;
     try {
       this.session.sendRealtimeInput({
         audio: {
@@ -345,6 +369,15 @@ export class ConversationLoop {
       const name = call.name ?? '';
       try {
         if (!name) throw new Error('Tool call is missing a function name');
+        if (name === HANDOFF_TOOL_NAME) {
+          const result = await this.handleHandoffTool(call.args ?? {});
+          responses.push({
+            ...(call.id ? { id: call.id } : {}),
+            name,
+            response: { output: result },
+          });
+          continue;
+        }
         const result = await executeTool(name, call.args ?? {}, {
           ...this.toolContext(),
           source: 'voice',
@@ -372,6 +405,49 @@ export class ConversationLoop {
 
     if (responses.length > 0 && !this.closed) {
       this.session?.sendToolResponse({ functionResponses: responses });
+    }
+  }
+
+  private async handleHandoffTool(
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (!this.agent.handoffEnabled) {
+      return { status: 'disabled', reason: 'Handoff is disabled' };
+    }
+    if (this.handoffRequested) {
+      return { status: 'already_requested' };
+    }
+
+    const reason = parseHandoffReason(args);
+    this.handoffRequested = true;
+    this.commitTranscriptTurn();
+    this.player.cancel();
+
+    await this.playHandoffMessage();
+    await this.options.onHandoffRequested?.({
+      reason,
+      message: this.agent.handoffMessage,
+    });
+    this.close();
+    return { status: 'queued', reason };
+  }
+
+  private async playHandoffMessage(): Promise<void> {
+    const message = this.agent.handoffMessage.trim();
+    if (!message) return;
+
+    this.queueAssistantTranscript(message);
+    try {
+      const audio = await synthesizeMulaw({
+        text: message,
+        languageCode: callerTranscriptLanguageCode(this.agent.language),
+        voiceName: handoffTtsVoice(this.agent),
+      });
+      this.player.enqueue(audio);
+      this.player.flush();
+      await this.player.drained();
+    } catch (err) {
+      console.error('[conv] handoff message TTS failed:', err);
     }
   }
 
@@ -469,6 +545,9 @@ export class ConversationLoop {
     const transcriptionConstraint = this.agent.language.startsWith('en')
       ? ''
       : 'The caller is expected to speak Amharic. Treat unclear caller audio as Amharic, and do not switch to Hindi, Chinese, Arabic, or other languages unless the caller clearly speaks that language.';
+    const handoffConstraint = this.agent.handoffEnabled
+      ? 'If the caller asks for a human agent, asks to be transferred, becomes upset, or asks for something outside your knowledge or available tools, call request_human_handoff with a concise Amharic reason for the human agent. Do not keep trying after the handoff request.'
+      : '';
     const campaignInstruction = this.campaignContext
       ? [
           'This is an outbound campaign call.',
@@ -487,6 +566,7 @@ export class ConversationLoop {
       voiceConstraint,
       toolConstraint,
       transcriptionConstraint,
+      handoffConstraint,
       campaignInstruction,
       knowledgeContext
         ? `Knowledge context for this agent and organization:\n${knowledgeContext}`
@@ -562,10 +642,25 @@ export class ConversationLoop {
   }
 }
 
-export function liveTranscriptionLanguageCodes(
-  agentLanguage: string,
-): string[] {
-  return agentLanguage.startsWith('en') ? ['en-US'] : ['am'];
+function withInternalHandoffTool(
+  tools: Awaited<ReturnType<typeof getGeminiToolConfig>>,
+  enabled: boolean,
+): Awaited<ReturnType<typeof getGeminiToolConfig>> {
+  if (!enabled) return tools;
+  return [...tools, { functionDeclarations: [HANDOFF_TOOL_DECLARATION] }];
+}
+
+function parseHandoffReason(args: Record<string, unknown>): string {
+  const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+  return reason || 'ደዋዩ ከሰው ወኪል ጋር መነጋገር ጠይቋል።';
+}
+
+function handoffTtsVoice(agent: AgentConfig): string {
+  if (process.env.HANDOFF_TTS_VOICE) return process.env.HANDOFF_TTS_VOICE;
+  if (agent.ttsVoice.includes('-')) return agent.ttsVoice;
+  return agent.language.startsWith('en')
+    ? 'en-US-Standard-C'
+    : 'am-ET-Standard-A';
 }
 
 export function callerTranscriptLanguageCode(agentLanguage: string): string {

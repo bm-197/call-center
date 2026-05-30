@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   CallIcon,
@@ -10,7 +11,12 @@ import {
   Search01Icon,
   UserGroupIcon,
 } from '@hugeicons/core-free-icons';
-import { useCalls, useCallStats, type CallFilters } from './use-calls';
+import {
+  useAcceptHandoffCall,
+  useCalls,
+  useCallStats,
+  type CallFilters,
+} from './use-calls';
 import {
   STATUS_LABEL,
   STATUS_VARIANT,
@@ -57,6 +63,7 @@ export default function CallsPage() {
     pageSize: PAGE_SIZE,
   });
   const stats = useCallStats();
+  const acceptHandoff = useAcceptHandoffCall();
 
   const items = data?.items ?? [];
   const pagination = data?.pagination;
@@ -200,6 +207,7 @@ export default function CallsPage() {
                     <TableHead>Duration</TableHead>
                     <TableHead>Started</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,6 +284,30 @@ export default function CallsPage() {
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {c.status === 'queued' && c.handedOff && (
+                          <Button
+                            size="sm"
+                            disabled={acceptHandoff.isPending}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await acceptHandoff.mutateAsync(c.id);
+                                toast.success('Handoff accepted');
+                                window.location.href = `/dashboard/calls/${c.id}`;
+                              } catch (err) {
+                                toast.error(
+                                  err instanceof Error
+                                    ? err.message
+                                    : 'Failed to accept handoff',
+                                );
+                              }
+                            }}
+                          >
+                            Accept
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
