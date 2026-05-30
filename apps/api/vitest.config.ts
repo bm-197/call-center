@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    conditions: ['@call-center/source'],
+  },
   test: {
     environment: 'node',
     globals: false,
