@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export type CallStatus =
@@ -113,7 +113,6 @@ export function useCalls(params?: CallListParams) {
     queryFn: () =>
       api<PaginatedResponse<CallListItem>>(`/api/calls${buildQuery(params)}`),
     placeholderData: (previous) => previous,
-    refetchInterval: 5000, // live-ish updates while a call is in progress
   });
 }
 
@@ -122,19 +121,6 @@ export function useCall(id: string | undefined) {
     queryKey: callsKeys.detail(id ?? ''),
     queryFn: () => api<CallDetail>(`/api/calls/${id}`),
     enabled: !!id,
-    refetchInterval: (q) => {
-      const data = q.state.data;
-      if (!data) return false;
-      // Keep refreshing while the call is still active
-      const live = [
-        'ringing',
-        'in_progress',
-        'ai_handling',
-        'queued',
-        'human_handling',
-      ];
-      return live.includes(data.status) ? 2000 : false;
-    },
   });
 }
 
@@ -142,7 +128,6 @@ export function useCallStats() {
   return useQuery({
     queryKey: callsKeys.stats(),
     queryFn: () => api<CallStats>('/api/calls/stats'),
-    refetchInterval: 10_000,
   });
 }
 
@@ -152,5 +137,17 @@ export function useCallRecording(id: string, enabled = false) {
     queryFn: () => api<{ url: string }>(`/api/calls/${id}/recording`),
     enabled,
     staleTime: 5 * 60_000, // presigned URL valid 10 min, refresh after 5
+  });
+}
+
+export function useAcceptHandoffCall() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<CallDetail>(`/api/queue/${id}/accept`, { method: 'POST' }),
+    onSuccess: (call) => {
+      qc.setQueryData(callsKeys.detail(call.id), call);
+      void qc.invalidateQueries({ queryKey: callsKeys.all });
+    },
   });
 }

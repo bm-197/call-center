@@ -22,6 +22,5 @@ export function useDashboardOverview() {
   return useQuery({
     queryKey: dashboardKeys.overview(),
     queryFn: () => api<DashboardOverview>('/api/analytics/overview'),
-    refetchInterval: 10_000,
   });
 }

@@ -49,6 +49,9 @@ const ORG_SCOPED_ENDPOINTS: Endpoint[] = [
   { method: 'get', path: '/api/calls/some-id' },
   { method: 'get', path: '/api/calls/some-id/recording' },
 
+  { method: 'get', path: '/api/queue' },
+  { method: 'post', path: '/api/queue/some-id/accept' },
+
   { method: 'get', path: '/api/knowledge-base' },
   {
     method: 'post',
