@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   CallIcon,
@@ -10,7 +11,12 @@ import {
   Search01Icon,
   UserGroupIcon,
 } from '@hugeicons/core-free-icons';
-import { useCalls, useCallStats, type CallFilters } from './use-calls';
+import {
+  useAcceptHandoffCall,
+  useCalls,
+  useCallStats,
+  type CallFilters,
+} from './use-calls';
 import {
   STATUS_LABEL,
   STATUS_VARIANT,
@@ -43,18 +49,33 @@ import {
 } from '@/components/ui/select';
 
 const ALL = '__all__';
+const PAGE_SIZE = 10;
 
 export default function CallsPage() {
   const [filters, setFilters] = useState<CallFilters>({});
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
   const { data, isLoading } = useCalls({
     ...filters,
     search: search || undefined,
+    page,
+    pageSize: PAGE_SIZE,
   });
   const stats = useCallStats();
+  const acceptHandoff = useAcceptHandoffCall();
 
   const items = data?.items ?? [];
+  const pagination = data?.pagination;
+  const pageCount = pagination?.pageCount ?? 1;
+  const total = pagination?.total ?? items.length;
+  const start = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, total);
+
+  function updateFilters(updater: (current: CallFilters) => CallFilters) {
+    setPage(1);
+    setFilters(updater);
+  }
 
   return (
     <div className="space-y-8">
@@ -101,14 +122,17 @@ export default function CallsPage() {
               <Input
                 placeholder="Search number…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setPage(1);
+                  setSearch(e.target.value);
+                }}
                 className="h-9 w-44 pl-8 text-sm"
               />
             </div>
             <Select
               value={filters.status ?? ALL}
               onValueChange={(v) =>
-                setFilters((f) => ({
+                updateFilters((f) => ({
                   ...f,
                   status: v === ALL ? undefined : (v as CallFilters['status']),
                 }))
@@ -129,7 +153,7 @@ export default function CallsPage() {
             <Select
               value={filters.direction ?? ALL}
               onValueChange={(v) =>
-                setFilters((f) => ({
+                updateFilters((f) => ({
                   ...f,
                   direction:
                     v === ALL ? undefined : (v as 'inbound' | 'outbound'),
@@ -155,6 +179,7 @@ export default function CallsPage() {
                 onClick={() => {
                   setFilters({});
                   setSearch('');
+                  setPage(1);
                 }}
               >
                 Clear
@@ -172,94 +197,149 @@ export default function CallsPage() {
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>From</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((c) => (
-                  <TableRow
-                    key={c.id}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      // Soft-navigate via Link wrapper would be cleaner;
-                      // table row asChild isn't supported, so we use window
-                      window.location.href = `/dashboard/calls/${c.id}`;
-                    }}
-                  >
-                    <TableCell>
-                      <HugeiconsIcon
-                        icon={
-                          c.direction === 'inbound'
-                            ? CallIncoming01Icon
-                            : CallOutgoing01Icon
-                        }
-                        size={16}
-                        strokeWidth={1.6}
-                        className="text-muted-foreground"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/dashboard/calls/${c.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="font-medium hover:underline"
-                      >
-                        {c.contact
-                          ? formatContactName(c.contact)
-                          : formatPhone(c.callerNumber)}
-                      </Link>
-                      {c.contact && (
-                        <div className="text-muted-foreground font-mono text-xs">
-                          {formatPhone(c.callerNumber)}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {c.agent?.name ?? (
-                        <span className="text-muted-foreground italic">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-sm">
-                      {formatDuration(c.duration)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {formatRelative(c.startedAt)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={STATUS_VARIANT[c.status]}
-                          className="capitalize"
-                        >
-                          {isActive(c.status) && (
-                            <span className="bg-primary mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full" />
-                          )}
-                          {STATUS_LABEL[c.status]}
-                        </Badge>
-                        {c.handedOff && (
-                          <Badge variant="outline" className="gap-1">
-                            <HugeiconsIcon
-                              icon={UserGroupIcon}
-                              size={10}
-                              strokeWidth={1.6}
-                            />
-                            Handoff
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10" />
+                    <TableHead>From</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Started</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-24" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.map((c) => (
+                    <TableRow
+                      key={c.id}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        // Soft-navigate via Link wrapper would be cleaner;
+                        // table row asChild isn't supported, so we use window
+                        window.location.href = `/dashboard/calls/${c.id}`;
+                      }}
+                    >
+                      <TableCell>
+                        <HugeiconsIcon
+                          icon={
+                            c.direction === 'inbound'
+                              ? CallIncoming01Icon
+                              : CallOutgoing01Icon
+                          }
+                          size={16}
+                          strokeWidth={1.6}
+                          className="text-muted-foreground"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/dashboard/calls/${c.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium hover:underline"
+                        >
+                          {c.contact
+                            ? formatContactName(c.contact)
+                            : formatPhone(c.callerNumber)}
+                        </Link>
+                        {c.contact && (
+                          <div className="text-muted-foreground font-mono text-xs">
+                            {formatPhone(c.callerNumber)}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {c.agent?.name ?? (
+                          <span className="text-muted-foreground italic">
+                            —
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-sm">
+                        {formatDuration(c.duration)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatRelative(c.startedAt)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={STATUS_VARIANT[c.status]}
+                            className="capitalize"
+                          >
+                            {isActive(c.status) && (
+                              <span className="bg-primary mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full" />
+                            )}
+                            {STATUS_LABEL[c.status]}
+                          </Badge>
+                          {c.handedOff && (
+                            <Badge variant="outline" className="gap-1">
+                              <HugeiconsIcon
+                                icon={UserGroupIcon}
+                                size={10}
+                                strokeWidth={1.6}
+                              />
+                              Handoff
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {c.status === 'queued' && c.handedOff && (
+                          <Button
+                            size="sm"
+                            disabled={acceptHandoff.isPending}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await acceptHandoff.mutateAsync(c.id);
+                                toast.success('Handoff accepted');
+                                window.location.href = `/dashboard/calls/${c.id}`;
+                              } catch (err) {
+                                toast.error(
+                                  err instanceof Error
+                                    ? err.message
+                                    : 'Failed to accept handoff',
+                                );
+                              }
+                            }}
+                          >
+                            Accept
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground">
+                  Showing {start}-{end} of {total}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-muted-foreground min-w-24 text-center">
+                    Page {page} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    disabled={page >= pageCount}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -2,13 +2,13 @@
 
 import { use, useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowLeft01Icon,
   BotIcon,
   CallIncoming01Icon,
   CallOutgoing01Icon,
-  PlayIcon,
   UserIcon,
   UserGroupIcon,
   VolumeHighIcon,
@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AudioPlayer } from '@/components/ui/audio-player';
 import { cn } from '@/lib/utils';
 import {
+  useAcceptHandoffCall,
   useCall,
   useCallRecording,
   type CallTranscriptTurn,
@@ -30,6 +31,8 @@ import {
   STATUS_VARIANT,
   formatContactName,
   formatDuration,
+  formatHandoffReason,
+  formatHandoffRelative,
   formatPhone,
   formatRelative,
   isActive,
@@ -44,6 +47,7 @@ export default function CallDetailPage({
   const { data: call, isLoading, error } = useCall(id);
   const [showRecording, setShowRecording] = useState(false);
   const recording = useCallRecording(id, showRecording);
+  const acceptHandoff = useAcceptHandoffCall();
 
   if (isLoading) return <DetailSkeleton />;
   if (error || !call) {
@@ -120,6 +124,25 @@ export default function CallDetailPage({
             )}
           </div>
         </div>
+        {call.status === 'queued' && call.handedOff && (
+          <Button
+            disabled={acceptHandoff.isPending}
+            onClick={async () => {
+              try {
+                await acceptHandoff.mutateAsync(call.id);
+                toast.success('Handoff accepted');
+              } catch (err) {
+                toast.error(
+                  err instanceof Error
+                    ? err.message
+                    : 'Failed to accept handoff',
+                );
+              }
+            }}
+          >
+            {acceptHandoff.isPending ? 'Accepting…' : 'Accept handoff'}
+          </Button>
+        )}
       </div>
 
       {call.summary && (
@@ -141,16 +164,16 @@ export default function CallDetailPage({
       {call.handedOff && call.handoffReason && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Handoff</CardTitle>
+            <CardTitle className="text-base">ወደ ሰው ወኪል ማስተላለፍ</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
             <p className="text-sm">
-              <span className="text-muted-foreground">Reason:</span>{' '}
-              {call.handoffReason}
+              <span className="text-muted-foreground">ምክንያት:</span>{' '}
+              {formatHandoffReason(call.handoffReason)}
             </p>
             {call.handoffTime && (
               <p className="text-muted-foreground text-xs">
-                Handed off {formatRelative(call.handoffTime)}
+                {formatHandoffRelative(call.handoffTime)}
               </p>
             )}
           </CardContent>
@@ -236,12 +259,12 @@ export default function CallDetailPage({
 function Transcript({ turns }: { turns: CallTranscriptTurn[] }) {
   return (
     <div className="space-y-3">
-      {turns.map((t, i) => {
+      {turns.map((t) => {
         const isCaller = t.speaker === 'caller';
         const isHuman = t.speaker === 'human';
         return (
           <div
-            key={i}
+            key={`${t.timestamp}-${t.speaker}`}
             className={cn('flex gap-3', isCaller && 'flex-row-reverse')}
           >
             <div

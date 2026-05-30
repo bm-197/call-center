@@ -19,17 +19,56 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const GEMINI_LIVE_VOICES = [
+  { name: 'Zephyr', tone: 'Bright' },
+  { name: 'Puck', tone: 'Upbeat' },
+  { name: 'Charon', tone: 'Informative' },
+  { name: 'Kore', tone: 'Firm' },
+  { name: 'Fenrir', tone: 'Excitable' },
+  { name: 'Leda', tone: 'Youthful' },
+  { name: 'Orus', tone: 'Firm' },
+  { name: 'Aoede', tone: 'Breezy' },
+  { name: 'Callirrhoe', tone: 'Easy-going' },
+  { name: 'Autonoe', tone: 'Bright' },
+  { name: 'Enceladus', tone: 'Breathy' },
+  { name: 'Iapetus', tone: 'Clear' },
+  { name: 'Umbriel', tone: 'Easy-going' },
+  { name: 'Algieba', tone: 'Smooth' },
+  { name: 'Despina', tone: 'Smooth' },
+  { name: 'Erinome', tone: 'Clear' },
+  { name: 'Algenib', tone: 'Gravelly' },
+  { name: 'Rasalgethi', tone: 'Informative' },
+  { name: 'Laomedeia', tone: 'Upbeat' },
+  { name: 'Achernar', tone: 'Soft' },
+  { name: 'Alnilam', tone: 'Firm' },
+  { name: 'Schedar', tone: 'Even' },
+  { name: 'Gacrux', tone: 'Mature' },
+  { name: 'Pulcherrima', tone: 'Forward' },
+  { name: 'Achird', tone: 'Friendly' },
+  { name: 'Zubenelgenubi', tone: 'Casual' },
+  { name: 'Vindemiatrix', tone: 'Gentle' },
+  { name: 'Sadachbia', tone: 'Lively' },
+  { name: 'Sadaltager', tone: 'Knowledgeable' },
+  { name: 'Sulafat', tone: 'Warm' },
+] as const;
+
+function normalizeLiveVoice(value: string | null | undefined) {
+  return (
+    GEMINI_LIVE_VOICES.find((voice) => voice.name === value)?.name ?? 'Puck'
+  );
+}
+
 const DEFAULTS: AgentInput = {
   name: '',
   description: '',
   language: 'am',
   status: 'draft',
   systemPrompt: `አንተ የደንበኛ አገልግሎት ወኪል ነህ። በትህትና በአማርኛ ምላሽ ስጥ።`,
-  llmProvider: 'openai',
-  llmModel: 'gpt-4o',
+  llmProvider: 'google',
+  llmModel: 'gemini-3.1-flash-live-preview',
   sttProvider: 'google',
   ttsProvider: 'google',
-  ttsVoice: 'am-ET-Wavenet-A',
+  ttsVoice: 'Puck',
   handoffEnabled: true,
   handoffConfidenceThreshold: 0.3,
   handoffMaxFailedAttempts: 3,
@@ -49,6 +88,7 @@ export function AgentForm({ mode }: { mode: Mode }) {
           ...DEFAULTS,
           ...mode.agent,
           description: mode.agent.description ?? '',
+          ttsVoice: normalizeLiveVoice(mode.agent.ttsVoice),
         }
       : DEFAULTS;
 
@@ -166,60 +206,26 @@ export function AgentForm({ mode }: { mode: Mode }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Voice & model</CardTitle>
+          <CardTitle className="text-base">Voice tone</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent>
           <div className="space-y-2">
-            <Label htmlFor="llmProvider">LLM provider</Label>
+            <Label htmlFor="ttsVoice">Voice tone</Label>
             <Select
-              value={form.llmProvider}
-              onValueChange={(v) =>
-                update_('llmProvider', v as AgentInput['llmProvider'])
-              }
+              value={normalizeLiveVoice(form.ttsVoice)}
+              onValueChange={(v) => update_('ttsVoice', v)}
             >
-              <SelectTrigger id="llmProvider">
+              <SelectTrigger id="ttsVoice" className="w-full">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="google">Google (Gemini)</SelectItem>
+              <SelectContent position="popper" align="start">
+                {GEMINI_LIVE_VOICES.map((voice) => (
+                  <SelectItem key={voice.name} value={voice.name}>
+                    {voice.name} · {voice.tone}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="llmModel">LLM model</Label>
-            <Input
-              id="llmModel"
-              value={form.llmModel ?? ''}
-              onChange={(e) => update_('llmModel', e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sttProvider">Speech-to-text</Label>
-            <Select
-              value={form.sttProvider}
-              onValueChange={(v) =>
-                update_('sttProvider', v as AgentInput['sttProvider'])
-              }
-            >
-              <SelectTrigger id="sttProvider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="google">Google Cloud Speech</SelectItem>
-                <SelectItem value="whisper">Whisper</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ttsVoice">TTS voice</Label>
-            <Input
-              id="ttsVoice"
-              value={form.ttsVoice ?? ''}
-              onChange={(e) => update_('ttsVoice', e.target.value)}
-              className="font-mono"
-            />
           </div>
         </CardContent>
       </Card>

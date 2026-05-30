@@ -50,6 +50,7 @@ local_net = 192.168.0.0/16
 type = endpoint
 context = call-center
 disallow = all
+allow = g722
 allow = ulaw
 allow = alaw
 auth = 1001
@@ -76,6 +77,11 @@ password = ${EXT_1001_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300
 
 ;
 ; Extension 1002
@@ -84,6 +90,7 @@ remove_existing = yes
 type = endpoint
 context = call-center
 disallow = all
+allow = g722
 allow = ulaw
 allow = alaw
 auth = 1002
@@ -103,6 +110,11 @@ password = ${EXT_1002_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300
 
 ;
 ; Extension 2001 — human agent (WebRTC)
@@ -111,6 +123,7 @@ remove_existing = yes
 type = endpoint
 context = call-center
 disallow = all
+allow = g722
 allow = ulaw
 allow = alaw
 auth = 2001
@@ -131,3 +144,8 @@ password = ${EXT_2001_PASSWORD}
 type = aor
 max_contacts = 1
 remove_existing = yes
+remove_unavailable = yes
+qualify_frequency = 30
+support_path = yes
+default_expiration = 120
+maximum_expiration = 300
