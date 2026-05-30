@@ -9,7 +9,6 @@ import {
   BotIcon,
   CallIncoming01Icon,
   CallOutgoing01Icon,
-  PlayIcon,
   UserIcon,
   UserGroupIcon,
   VolumeHighIcon,
@@ -260,12 +259,12 @@ export default function CallDetailPage({
 function Transcript({ turns }: { turns: CallTranscriptTurn[] }) {
   return (
     <div className="space-y-3">
-      {turns.map((t, i) => {
+      {turns.map((t) => {
         const isCaller = t.speaker === 'caller';
         const isHuman = t.speaker === 'human';
         return (
           <div
-            key={i}
+            key={`${t.timestamp}-${t.speaker}`}
             className={cn('flex gap-3', isCaller && 'flex-row-reverse')}
           >
             <div

@@ -114,85 +114,83 @@ export default function CampaignsPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Recipients</TableHead>
-                    <TableHead>Calls</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Updated</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Recipients</TableHead>
+                  <TableHead>Calls</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {campaigns.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <Link
+                        href={`/dashboard/campaigns/${c.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                      {c.description && (
+                        <div className="text-muted-foreground line-clamp-1 text-xs">
+                          {c.description}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {c.agent?.name ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {c._count?.recipients ?? 0}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {c._count?.calls ?? 0}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={STATUS_VARIANT[c.status]}
+                        className="capitalize"
+                      >
+                        {c.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {new Date(c.updatedAt).toLocaleDateString()}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaigns.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell>
-                        <Link
-                          href={`/dashboard/campaigns/${c.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {c.name}
-                        </Link>
-                        {c.description && (
-                          <div className="text-muted-foreground line-clamp-1 text-xs">
-                            {c.description}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {c.agent?.name ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {c._count?.recipients ?? 0}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {c._count?.calls ?? 0}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={STATUS_VARIANT[c.status]}
-                          className="capitalize"
-                        >
-                          {c.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {new Date(c.updatedAt).toLocaleDateString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-muted-foreground">
-                  Showing {start}-{end} of {total}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-muted-foreground min-w-24 text-center">
-                    Page {page} of {pageCount}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                    disabled={page >= pageCount}
-                  >
-                    Next
-                  </Button>
-                </div>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-muted-foreground">
+                Showing {start}-{end} of {total}
               </div>
-            </>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-muted-foreground min-w-24 text-center">
+                  Page {page} of {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={page >= pageCount}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
