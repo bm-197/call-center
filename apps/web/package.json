@@ -7,7 +7,7 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "cd ../.. && biome ci --config-path biome.json ."
   },
   "dependencies": {
     "@call-center/shared": "workspace:*",

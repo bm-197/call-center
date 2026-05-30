@@ -219,6 +219,7 @@ function PdfForm({ onClose }: { onClose: () => void }) {
 
   const pending = upload.isPending;
   const overSize = file && file.size > MAX_PDF_BYTES;
+  const fileSizeMb = file ? (file.size / 1024 / 1024).toFixed(1) : '0.0';
 
   function pick(f: File | undefined | null) {
     if (!f) return;
@@ -250,14 +251,25 @@ function PdfForm({ onClose }: { onClose: () => void }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div
+      <input
+        id="knowledge-pdf-input"
+        ref={fileInput}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => pick(e.target.files?.[0])}
+        disabled={pending}
+      />
+      <button
+        type="button"
         className={cn(
-          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
+          'flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-70',
           dragging
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/30 hover:border-muted-foreground/60',
           file && 'border-primary/40 bg-primary/5',
         )}
+        disabled={pending}
         onClick={() => fileInput.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -270,14 +282,6 @@ function PdfForm({ onClose }: { onClose: () => void }) {
           pick(e.dataTransfer.files?.[0]);
         }}
       >
-        <input
-          ref={fileInput}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          onChange={(e) => pick(e.target.files?.[0])}
-          disabled={pending}
-        />
         {file ? (
           <>
             <HugeiconsIcon icon={File02Icon} size={28} strokeWidth={1.4} />
@@ -287,17 +291,9 @@ function PdfForm({ onClose }: { onClose: () => void }) {
                 {(file.size / 1024 / 1024).toFixed(2)} MB
               </div>
             </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFile(null);
-                if (fileInput.current) fileInput.current.value = '';
-              }}
-              className="text-muted-foreground hover:text-foreground text-xs underline"
-            >
-              Choose another file
-            </button>
+            <span className="text-muted-foreground hover:text-foreground text-xs underline">
+              Click to choose another file
+            </span>
           </>
         ) : (
           <>
@@ -317,12 +313,11 @@ function PdfForm({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
-      </div>
+      </button>
 
       {overSize && (
         <p className="text-destructive text-xs">
-          File is too large ({(file!.size / 1024 / 1024).toFixed(1)} MB). Max 25
-          MB.
+          File is too large ({fileSizeMb} MB). Max 25 MB.
         </p>
       )}
 
