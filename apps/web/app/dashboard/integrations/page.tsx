@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -15,6 +15,8 @@ import {
   useSaveIntegration,
   useTestTool,
   useToolInvocations,
+  useUpdateIntegration,
+  type IntegrationConnection,
   type IntegrationProvider,
 } from './use-integrations';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +29,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -60,9 +70,15 @@ const tools = [
   { value: 'calendar_create_event', label: 'Create appointment' },
 ];
 
+const TOOL_ACTIVITY_PAGE_SIZE = 25;
+
 export default function IntegrationsPage() {
   const integrations = useIntegrations();
-  const invocations = useToolInvocations();
+  const [activityPage, setActivityPage] = useState(1);
+  const invocations = useToolInvocations({
+    page: activityPage,
+    pageSize: TOOL_ACTIVITY_PAGE_SIZE,
+  });
   const agents = useAgents();
   const save = useSaveIntegration();
   const testTool = useTestTool();
@@ -86,6 +102,12 @@ export default function IntegrationsPage() {
   const [toolName, setToolName] = useState('waitlist_add_contact');
   const [argsJson, setArgsJson] = useState(formatJson(toolArgs(toolName)));
   const [testResult, setTestResult] = useState<unknown>(null);
+  const invocationItems = invocations.data?.items ?? [];
+  const invocationPagination = invocations.data?.pagination;
+  const invocationTotal = invocationPagination?.total ?? 0;
+  const invocationPageCount = invocationPagination?.pageCount ?? 1;
+  const [selectedIntegration, setSelectedIntegration] =
+    useState<IntegrationConnection | null>(null);
 
   function onProviderChange(value: IntegrationProvider) {
     setProvider(value);
@@ -321,6 +343,7 @@ export default function IntegrationsPage() {
                   <TableHead>Provider</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Updated</TableHead>
+                  <TableHead className="text-right">Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -338,6 +361,16 @@ export default function IntegrationsPage() {
                     <TableCell className="text-muted-foreground text-sm">
                       {new Date(integration.updatedAt).toLocaleString()}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedIntegration(integration)}
+                      >
+                        View
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -346,15 +379,21 @@ export default function IntegrationsPage() {
         </CardContent>
       </Card>
 
+      <ConnectionDetailsDialog
+        integration={selectedIntegration}
+        onClose={() => setSelectedIntegration(null)}
+        onUpdated={setSelectedIntegration}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Tool Activity</CardTitle>
           <CardDescription>
-            Loads on page open and manual refresh.
+            Recent tool executions for this workspace.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{invocations.data?.length ?? 0}</Badge>
+              <Badge variant="outline">{invocationTotal}</Badge>
               <Button
                 type="button"
                 variant="outline"
@@ -374,49 +413,316 @@ export default function IntegrationsPage() {
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : !invocations.data?.length ? (
+          ) : !invocationItems.length ? (
             <div className="text-muted-foreground py-8 text-sm">
               No tool calls yet.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tool</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invocations.data.slice(0, 25).map((invocation) => (
-                  <TableRow key={invocation.id}>
-                    <TableCell className="font-mono text-xs">
-                      {invocation.toolName}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(invocation.status)}>
-                        {invocation.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{invocation.source}</TableCell>
-                    <TableCell>
-                      {resultProvider(invocation.result) ??
-                        invocation.externalProvider ??
-                        '—'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(invocation.createdAt).toLocaleTimeString()}
-                    </TableCell>
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tool</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Time</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {invocationItems.map((invocation) => (
+                    <TableRow key={invocation.id}>
+                      <TableCell className="font-mono text-xs">
+                        {invocation.toolName}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(invocation.status)}>
+                          {invocation.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{invocation.source}</TableCell>
+                      <TableCell>
+                        {resultProvider(invocation.result) ??
+                          invocation.externalProvider ??
+                          '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(invocation.createdAt).toLocaleTimeString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground text-sm">
+                  Page {activityPage} of {invocationPageCount} ·{' '}
+                  {invocationTotal} total
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={activityPage <= 1 || invocations.isFetching}
+                    onClick={() => setActivityPage((page) => page - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      activityPage >= invocationPageCount ||
+                      invocations.isFetching
+                    }
+                    onClick={() => setActivityPage((page) => page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ConnectionDetailsDialog({
+  integration,
+  onClose,
+  onUpdated,
+}: {
+  integration: IntegrationConnection | null;
+  onClose: () => void;
+  onUpdated: (integration: IntegrationConnection) => void;
+}) {
+  const updateIntegration = useUpdateIntegration();
+  const [name, setName] = useState('');
+  const [status, setStatus] =
+    useState<IntegrationConnection['status']>('active');
+  const [configJson, setConfigJson] = useState(formatJson({}));
+  const [credentialsJson, setCredentialsJson] = useState(formatJson({}));
+
+  useEffect(() => {
+    if (!integration) return;
+    setName(integration.name);
+    setStatus(integration.status);
+    setConfigJson(formatJson(integration.config ?? {}));
+    setCredentialsJson(formatJson({}));
+  }, [integration]);
+
+  if (!integration) return null;
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!integration) return;
+
+    try {
+      const nextConfig = parseJsonObject(configJson, 'Config');
+      const nextCredentials = parseJsonObject(
+        credentialsJson,
+        'New credentials',
+      );
+      if (hasMaskedCredentialValue(nextCredentials)) {
+        throw new Error(
+          'New credentials cannot include masked values. Paste fresh secret values or leave the object empty.',
+        );
+      }
+
+      const updated = await updateIntegration.mutateAsync({
+        id: integration.id,
+        input: {
+          name: name.trim(),
+          status,
+          config: nextConfig,
+          ...(isEmptyObject(nextCredentials)
+            ? {}
+            : { credentials: nextCredentials }),
+        },
+      });
+      setCredentialsJson(formatJson({}));
+      onUpdated(updated);
+      toast.success('Connection updated');
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update connection',
+      );
+    }
+  }
+
+  return (
+    <Dialog
+      open={Boolean(integration)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <form onSubmit={onSubmit} className="flex flex-col gap-6">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center gap-2">
+              <DialogTitle>{integration.name}</DialogTitle>
+              <Badge variant={statusVariant(integration.status)}>
+                {integration.status}
+              </Badge>
+            </div>
+            <DialogDescription>
+              Edit the connection config or rotate credentials. Existing
+              credential values stay unchanged unless you provide new ones.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailItem
+              label="Provider"
+              value={providerLabel(integration.provider)}
+            />
+            <DetailItem label="Connection ID" value={integration.id} mono />
+            <DetailItem
+              label="Created"
+              value={formatDateTime(integration.createdAt)}
+            />
+            <DetailItem
+              label="Updated"
+              value={formatDateTime(integration.updatedAt)}
+            />
+          </div>
+
+          {integration.errorMessage && (
+            <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-4">
+              <div className="text-sm font-medium text-destructive">
+                Connection error
+              </div>
+              <p className="mt-2 text-sm text-destructive/90">
+                {integration.errorMessage}
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="connection-name">Name</Label>
+              <Input
+                id="connection-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={updateIntegration.isPending}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="connection-status">Status</Label>
+              <Select
+                value={status}
+                onValueChange={(value) =>
+                  setStatus(value as IntegrationConnection['status'])
+                }
+                disabled={updateIntegration.isPending}
+              >
+                <SelectTrigger id="connection-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="connection-config">Config JSON</Label>
+            <Textarea
+              id="connection-config"
+              value={configJson}
+              onChange={(event) => setConfigJson(event.target.value)}
+              disabled={updateIntegration.isPending}
+              className="min-h-56 font-mono text-xs"
+            />
+          </div>
+
+          <JsonBlock
+            title="Current masked credentials"
+            value={integration.credentials ?? {}}
+            description="Read-only. These masked values are never submitted back."
+          />
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="connection-credentials">New credentials JSON</Label>
+            <Textarea
+              id="connection-credentials"
+              value={credentialsJson}
+              onChange={(event) => setCredentialsJson(event.target.value)}
+              disabled={updateIntegration.isPending}
+              className="min-h-36 font-mono text-xs"
+            />
+            <p className="text-muted-foreground text-xs">
+              Leave this as an empty object to keep existing credentials. Enter
+              a complete replacement object when rotating tokens.
+            </p>
+          </div>
+
+          <DialogFooter showCloseButton>
+            <Button type="submit" disabled={updateIntegration.isPending}>
+              {updateIntegration.isPending ? 'Saving...' : 'Save changes'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DetailItem({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border bg-muted/30 p-4">
+      <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+        {label}
+      </div>
+      <div
+        className={
+          mono ? 'mt-2 break-all font-mono text-xs' : 'mt-2 text-sm font-medium'
+        }
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function JsonBlock({
+  title,
+  value,
+  description,
+}: {
+  title: string;
+  value: unknown;
+  description?: string;
+}) {
+  return (
+    <section className="rounded-2xl border">
+      <div className="border-b p-4">
+        <h3 className="text-sm font-medium">{title}</h3>
+        {description && (
+          <p className="text-muted-foreground mt-1 text-xs">{description}</p>
+        )}
+      </div>
+      <pre className="max-h-72 overflow-auto p-4 font-mono text-xs">
+        {formatJson(value)}
+      </pre>
+    </section>
   );
 }
 
@@ -515,8 +821,23 @@ function parseJsonObject(
   return parsed as Record<string, unknown>;
 }
 
+function isEmptyObject(value: Record<string, unknown>) {
+  return Object.keys(value).length === 0;
+}
+
+function hasMaskedCredentialValue(value: unknown): boolean {
+  if (value === '********') return true;
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasMaskedCredentialValue);
+  return Object.values(value).some(hasMaskedCredentialValue);
+}
+
 function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString();
 }
 
 function providerLabel(provider: IntegrationProvider) {

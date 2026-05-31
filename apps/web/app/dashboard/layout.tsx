@@ -26,7 +26,10 @@ export default async function DashboardLayout({
     return <ResolveActiveOrg organizationId={orgs[0].id} />;
   }
 
-  const org = await getActiveOrganization();
+  const [org, orgs] = await Promise.all([
+    getActiveOrganization(),
+    listOrganizations(),
+  ]);
   const organizationId = org?.id ?? session.session.activeOrganizationId;
 
   return (
@@ -36,6 +39,8 @@ export default async function DashboardLayout({
         user={session.user}
         orgName={org?.name ?? 'Organization'}
         orgLogo={org?.logo ?? null}
+        activeOrganizationId={organizationId}
+        organizations={orgs}
       />
       <div className="md:pl-60">
         <main className="mx-auto max-w-6xl px-6 py-8 lg:px-10 lg:py-10">

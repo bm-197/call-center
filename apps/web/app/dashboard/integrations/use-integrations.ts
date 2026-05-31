@@ -28,6 +28,8 @@ export type IntegrationInput = {
   credentials?: Record<string, unknown>;
 };
 
+export type IntegrationUpdateInput = Partial<IntegrationInput>;
+
 export type ToolInvocation = {
   id: string;
   organizationId: string;
@@ -48,11 +50,36 @@ export type ToolInvocation = {
   updatedAt: string;
 };
 
+export type ToolInvocationListParams = {
+  page?: number;
+  pageSize?: number;
+};
+
+export type PaginatedToolInvocations = {
+  items: ToolInvocation[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+  };
+};
+
 export const integrationKeys = {
   all: ['integrations'] as const,
   list: () => [...integrationKeys.all, 'list'] as const,
-  invocations: () => [...integrationKeys.all, 'invocations'] as const,
+  invocations: (params?: ToolInvocationListParams) =>
+    [...integrationKeys.all, 'invocations', params] as const,
 };
+
+function buildInvocationQuery(params: ToolInvocationListParams | undefined) {
+  if (!params) return '';
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+  const qs = query.toString();
+  return qs ? `?${qs}` : '';
+}
 
 export function useIntegrations() {
   return useQuery({
@@ -73,10 +100,32 @@ export function useSaveIntegration() {
   });
 }
 
-export function useToolInvocations() {
+export function useUpdateIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: IntegrationUpdateInput;
+    }) =>
+      api<IntegrationConnection>(`/api/integrations/${id}`, {
+        method: 'PATCH',
+        body: input,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: integrationKeys.all }),
+  });
+}
+
+export function useToolInvocations(params?: ToolInvocationListParams) {
   return useQuery({
-    queryKey: integrationKeys.invocations(),
-    queryFn: () => api<ToolInvocation[]>('/api/tools/invocations'),
+    queryKey: integrationKeys.invocations(params),
+    queryFn: () =>
+      api<PaginatedToolInvocations>(
+        `/api/tools/invocations${buildInvocationQuery(params)}`,
+      ),
+    placeholderData: (previous) => previous,
     retry: false,
   });
 }
