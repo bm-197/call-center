@@ -52,13 +52,15 @@ function SignUpForm() {
   }
 
   return (
-    <Card>
-      <CardHeader className="space-y-2 text-center">
-        <CardTitle className="text-2xl">Create your account</CardTitle>
-        <CardDescription>Start handling Amharic calls with AI</CardDescription>
+    <Card className="rounded-[14px] border border-white/80 bg-card/95 py-0 shadow-[0_28px_70px_rgba(20,184,166,0.18),0_8px_24px_rgba(5,150,105,0.12)] ring-1 ring-foreground/10 backdrop-blur-xl">
+      <CardHeader className="px-11 pt-12 pb-2 text-left">
+        <CardTitle className="text-[26px] font-semibold tracking-[-0.04em] text-foreground">
+          Create your account
+        </CardTitle>
+        <CardDescription>Start handling Amharic calls with AI.</CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 px-11 pt-5">
           <div className="space-y-2">
             <Label htmlFor="name">Full name</Label>
             <Input
@@ -69,6 +71,7 @@ function SignUpForm() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={loading}
+              className="h-12 rounded-[7px] border-input bg-white text-foreground shadow-[0_1px_1px_rgba(15,23,42,0.02)] focus-visible:border-primary focus-visible:ring-primary/25"
             />
           </div>
           <div className="space-y-2">
@@ -81,6 +84,7 @@ function SignUpForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
+              className="h-12 rounded-[7px] border-input bg-white text-foreground shadow-[0_1px_1px_rgba(15,23,42,0.02)] focus-visible:border-primary focus-visible:ring-primary/25"
             />
           </div>
           <div className="space-y-2">
@@ -94,19 +98,27 @@ function SignUpForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              className="h-12 rounded-[7px] border-input bg-white text-foreground shadow-[0_1px_1px_rgba(15,23,42,0.02)] focus-visible:border-primary focus-visible:ring-primary/25"
             />
             <p className="text-muted-foreground text-xs">
               At least 8 characters.
             </p>
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button
+            type="submit"
+            className="mt-2 h-12 w-full rounded-[7px] text-[15px] font-semibold shadow-[0_8px_18px_rgba(20,184,166,0.18)]"
+            disabled={loading}
+          >
             {loading ? 'Creating account…' : 'Create account'}
           </Button>
+        </CardContent>
+        <CardFooter className="mt-12 justify-center rounded-b-[14px] bg-muted/50 px-11 py-7">
           <p className="text-muted-foreground text-center text-sm">
             Already have an account?{' '}
-            <Link href="/sign-in" className="text-foreground underline">
+            <Link
+              href="/sign-in"
+              className="font-semibold text-primary hover:text-primary/80"
+            >
               Sign in
             </Link>
           </p>
