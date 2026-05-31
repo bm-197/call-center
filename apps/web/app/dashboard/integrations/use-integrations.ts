@@ -28,6 +28,8 @@ export type IntegrationInput = {
   credentials?: Record<string, unknown>;
 };
 
+export type IntegrationUpdateInput = Partial<IntegrationInput>;
+
 export type ToolInvocation = {
   id: string;
   organizationId: string;
@@ -92,6 +94,24 @@ export function useSaveIntegration() {
     mutationFn: (input: IntegrationInput) =>
       api<IntegrationConnection>('/api/integrations', {
         method: 'POST',
+        body: input,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: integrationKeys.all }),
+  });
+}
+
+export function useUpdateIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: IntegrationUpdateInput;
+    }) =>
+      api<IntegrationConnection>(`/api/integrations/${id}`, {
+        method: 'PATCH',
         body: input,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: integrationKeys.all }),
