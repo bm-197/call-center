@@ -131,6 +131,7 @@ services:
       ARI_APP_NAME: ${ARI_APP_NAME:-call-center}
       ASTERISK_RTP_HOST: 127.0.0.1
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Path inside the container — must point at a service-account JSON
       # mounted via the volumes block below.
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-creds.json
