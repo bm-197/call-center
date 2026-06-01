@@ -49,8 +49,13 @@ type HandoffRequest = {
   reason: string;
   message: string;
 };
+type EndCallRequest = {
+  reason: string;
+  message: string;
+};
 type ConversationLoopOptions = {
   onHandoffRequested?: (request: HandoffRequest) => Promise<void> | void;
+  onEndCallRequested?: (request: EndCallRequest) => Promise<void> | void;
 };
 
 const LIVE_MODEL =
@@ -75,6 +80,7 @@ const TRANSCRIPT_ALIGN_WAIT_MS = Number(
   process.env.CALLER_TRANSCRIPT_ALIGN_WAIT_MS ?? 2_500,
 );
 const HANDOFF_TOOL_NAME = 'request_human_handoff';
+const END_CALL_TOOL_NAME = 'end_call';
 const DEFAULT_LIVE_VOICE = 'Puck';
 const LIVE_VOICES = new Set([
   'Zephyr',
@@ -132,6 +138,35 @@ const HANDOFF_TOOL_DECLARATION = {
     },
   },
 } satisfies FunctionDeclaration;
+const END_CALL_TOOL_DECLARATION = {
+  name: END_CALL_TOOL_NAME,
+  description:
+    'End the phone call only when the caller has clearly finished, says goodbye, thanks you and has no remaining request, or the conversation is otherwise complete. The system will speak the provided final message and then hang up. Do not use it while the caller still needs help.',
+  parametersJsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      reason: {
+        type: 'string',
+        description:
+          'Short internal reason for ending the call, for example caller said goodbye or request completed.',
+      },
+      message: {
+        type: 'string',
+        description:
+          'One short final spoken sentence in the caller language before hanging up.',
+      },
+    },
+    required: ['reason', 'message'],
+  },
+  responseJsonSchema: {
+    type: 'object',
+    properties: {
+      status: { type: 'string' },
+      reason: { type: 'string' },
+    },
+  },
+} satisfies FunctionDeclaration;
 
 export class ConversationLoop {
   private player: TtsPlayer;
@@ -146,6 +181,7 @@ export class ConversationLoop {
   private pendingAssistantTurn: ConversationTranscriptTurn | null = null;
   private pendingAssistantTimer: NodeJS.Timeout | null = null;
   private handoffRequested = false;
+  private endCallRequested = false;
 
   constructor(
     private readonly bridge: AudioBridge,
@@ -163,7 +199,7 @@ export class ConversationLoop {
 
     this.ai = new GoogleGenAI({ apiKey });
     const systemInstruction = await this.buildSystemInstruction();
-    const tools = withInternalHandoffTool(
+    const tools = withInternalTools(
       await getGeminiToolConfig({
         organizationId: this.agent.organizationId,
         agentId: this.agent.id,
@@ -270,6 +306,7 @@ export class ConversationLoop {
     if (
       this.closed ||
       this.handoffRequested ||
+      this.endCallRequested ||
       !this.session ||
       chunk.length === 0
     )
@@ -378,6 +415,15 @@ export class ConversationLoop {
           });
           continue;
         }
+        if (name === END_CALL_TOOL_NAME) {
+          const result = await this.handleEndCallTool(call.args ?? {});
+          responses.push({
+            ...(call.id ? { id: call.id } : {}),
+            name,
+            response: { output: result },
+          });
+          continue;
+        }
         const result = await executeTool(name, call.args ?? {}, {
           ...this.toolContext(),
           source: 'voice',
@@ -432,14 +478,45 @@ export class ConversationLoop {
     return { status: 'queued', reason };
   }
 
+  private async handleEndCallTool(
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (this.endCallRequested) {
+      return { status: 'already_requested' };
+    }
+    if (this.handoffRequested) {
+      return { status: 'handoff_already_requested' };
+    }
+
+    const request = parseEndCallRequest(args, this.agent.language);
+    this.endCallRequested = true;
+    this.commitTranscriptTurn();
+    this.player.cancel();
+
+    await this.playFinalMessage(request.message);
+    await this.options.onEndCallRequested?.(request);
+    this.close();
+    return { status: 'ending', reason: request.reason };
+  }
+
   private async playHandoffMessage(): Promise<void> {
     const message = this.agent.handoffMessage.trim();
     if (!message) return;
 
-    this.queueAssistantTranscript(message);
+    await this.playFinalMessage(message, '[conv] handoff message TTS failed:');
+  }
+
+  private async playFinalMessage(
+    message: string,
+    errorPrefix = '[conv] final message TTS failed:',
+  ): Promise<void> {
+    const clean = message.trim();
+    if (!clean) return;
+
+    this.queueAssistantTranscript(clean);
     try {
       const audio = await synthesizeMulaw({
-        text: message,
+        text: clean,
         languageCode: callerTranscriptLanguageCode(this.agent.language),
         voiceName: handoffTtsVoice(this.agent),
       });
@@ -447,7 +524,7 @@ export class ConversationLoop {
       this.player.flush();
       await this.player.drained();
     } catch (err) {
-      console.error('[conv] handoff message TTS failed:', err);
+      console.error(errorPrefix, err);
     }
   }
 
@@ -548,6 +625,8 @@ export class ConversationLoop {
     const handoffConstraint = this.agent.handoffEnabled
       ? 'If the caller asks for a human agent, asks to be transferred, becomes upset, or asks for something outside your knowledge or available tools, call request_human_handoff with a concise Amharic reason for the human agent. Do not keep trying after the handoff request.'
       : '';
+    const endCallConstraint =
+      'When the caller clearly has no remaining request, says goodbye, or the conversation is complete, call end_call with a concise reason and a short final spoken sentence in the message field. The system will say that message and hang up. Do not call end_call while the caller still needs help or while a tool action is still pending.';
     const campaignInstruction = this.campaignContext
       ? [
           'This is an outbound campaign call.',
@@ -567,6 +646,7 @@ export class ConversationLoop {
       toolConstraint,
       transcriptionConstraint,
       handoffConstraint,
+      endCallConstraint,
       campaignInstruction,
       knowledgeContext
         ? `Knowledge context for this agent and organization:\n${knowledgeContext}`
@@ -642,17 +722,36 @@ export class ConversationLoop {
   }
 }
 
-function withInternalHandoffTool(
+function withInternalTools(
   tools: Awaited<ReturnType<typeof getGeminiToolConfig>>,
-  enabled: boolean,
+  handoffEnabled: boolean,
 ): Awaited<ReturnType<typeof getGeminiToolConfig>> {
-  if (!enabled) return tools;
-  return [...tools, { functionDeclarations: [HANDOFF_TOOL_DECLARATION] }];
+  const declarations = [
+    ...(handoffEnabled ? [HANDOFF_TOOL_DECLARATION] : []),
+    END_CALL_TOOL_DECLARATION,
+  ];
+  return [...tools, { functionDeclarations: declarations }];
 }
 
 function parseHandoffReason(args: Record<string, unknown>): string {
   const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
   return reason || 'ደዋዩ ከሰው ወኪል ጋር መነጋገር ጠይቋል።';
+}
+
+function parseEndCallRequest(
+  args: Record<string, unknown>,
+  agentLanguage: string,
+): EndCallRequest {
+  const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+  const message = typeof args.message === 'string' ? args.message.trim() : '';
+  return {
+    reason: reason || 'Conversation completed',
+    message:
+      message ||
+      (agentLanguage.startsWith('en')
+        ? 'Thank you for calling. Goodbye.'
+        : 'ስለደወሉ እናመሰግናለን። ደህና ይሁኑ።'),
+  };
 }
 
 function handoffTtsVoice(agent: AgentConfig): string {

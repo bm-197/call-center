@@ -332,6 +332,8 @@ async function handleStart(
     {
       onHandoffRequested: ({ reason }) =>
         requestHumanHandoff(setup.callId, reason),
+      onEndCallRequested: ({ reason }) =>
+        endCallFromAgent(setup.callId, channel, reason),
     },
   );
 
@@ -484,6 +486,25 @@ async function requestHumanHandoff(
 
   await broadcastCallState(updated.organizationId, callId, 'handoff.requested');
   console.log(`[orchestrator] Call ${callId} queued for handoff: ${reason}`);
+}
+
+async function endCallFromAgent(
+  callId: string,
+  channel: AriChannel,
+  reason: string,
+): Promise<void> {
+  const state = callsByCallId.get(callId);
+  if (!state || state.callerChannelId !== channel.id) {
+    console.warn(
+      `[orchestrator] agent end requested for inactive Call ${callId}`,
+    );
+    return;
+  }
+
+  console.log(`[orchestrator] AI ending Call ${callId}: ${reason}`);
+  await channel.hangup().catch((err) => {
+    console.error(`[orchestrator] failed to hang up Call ${callId}:`, err);
+  });
 }
 
 async function prepareInboundCall(
