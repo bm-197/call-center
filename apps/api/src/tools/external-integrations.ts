@@ -14,7 +14,11 @@ type IntegrationConnection = {
   credentials: Prisma.JsonValue | null;
 };
 
-type ToolArgs = WaitlistInput | ContactNotesInput | CalendarInput;
+type ToolArgs =
+  | WaitlistInput
+  | ContactNotesInput
+  | CalendarInput
+  | Record<string, unknown>;
 
 type NotionPropertySchema = {
   type?: string;
@@ -639,6 +643,19 @@ function notionFieldValues(
     };
   }
 
+  if (toolName !== 'calendar_create_event') {
+    const input = jsonObject(args);
+    const title =
+      stringValue(input.title) ??
+      stringValue(input.name) ??
+      `${humanizeToolName(toolName)} - ${context.callerNumber ?? 'caller'}`;
+    return {
+      ...common,
+      ...input,
+      title,
+    };
+  }
+
   const input = args as CalendarInput;
   const startsAt = new Date(input.startsAt);
   const endsAt = new Date(startsAt.getTime() + input.durationMinutes * 60_000);
@@ -740,6 +757,14 @@ function buildNotionTitle(
     const input = args as ContactNotesInput;
     return `Contact note - ${input.phoneNumber ?? context.callerNumber ?? input.contactId ?? 'caller'}`;
   }
+  if (toolName !== 'calendar_create_event') {
+    const input = jsonObject(args);
+    return (
+      stringValue(input.title) ??
+      stringValue(input.name) ??
+      `${humanizeToolName(toolName)} - ${context.callerNumber ?? 'caller'}`
+    );
+  }
   const input = args as CalendarInput;
   return `Appointment - ${input.title}`;
 }
@@ -783,12 +808,30 @@ function buildNotionSummary(
       .join('\n');
   }
 
-  const input = args as ContactNotesInput;
+  if (toolName === 'contact_update_notes') {
+    const input = args as ContactNotesInput;
+    return [
+      `Tool: ${toolName}`,
+      input.phoneNumber ? `Phone: ${input.phoneNumber}` : null,
+      input.contactId ? `Contact ID: ${input.contactId}` : null,
+      `Notes: ${input.notes}`,
+      context.callerNumber ? `Caller: ${context.callerNumber}` : null,
+      context.callId ? `Call ID: ${context.callId}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  const input = jsonObject(args);
+  const fields = Object.entries(input)
+    .map(
+      ([key, value]) =>
+        `${key}: ${notionText(value) || stringifyPayload(value)}`,
+    )
+    .join('\n');
   return [
     `Tool: ${toolName}`,
-    input.phoneNumber ? `Phone: ${input.phoneNumber}` : null,
-    input.contactId ? `Contact ID: ${input.contactId}` : null,
-    `Notes: ${input.notes}`,
+    fields,
     context.callerNumber ? `Caller: ${context.callerNumber}` : null,
     context.callId ? `Call ID: ${context.callId}` : null,
   ]
@@ -889,4 +932,12 @@ function stringifyPayload(payload: unknown): string {
 
 function toInputJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
+}
+
+function humanizeToolName(name: string): string {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }

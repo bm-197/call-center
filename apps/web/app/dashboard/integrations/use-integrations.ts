@@ -28,6 +28,8 @@ export type IntegrationInput = {
   credentials?: Record<string, unknown>;
 };
 
+export type IntegrationUpdateInput = Partial<IntegrationInput>;
+
 export type ToolInvocation = {
   id: string;
   organizationId: string;
@@ -48,10 +50,25 @@ export type ToolInvocation = {
   updatedAt: string;
 };
 
+export type AgentTool = {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  defaultEnabled: boolean;
+  requiresConfirmation: boolean;
+  enabled: boolean;
+  grantId: string | null;
+  config: unknown;
+};
+
 export const integrationKeys = {
   all: ['integrations'] as const,
   list: () => [...integrationKeys.all, 'list'] as const,
   invocations: () => [...integrationKeys.all, 'invocations'] as const,
+  tools: (agentId: string) =>
+    [...integrationKeys.all, 'tools', agentId] as const,
 };
 
 export function useIntegrations() {
@@ -73,10 +90,37 @@ export function useSaveIntegration() {
   });
 }
 
+export function useUpdateIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: IntegrationUpdateInput;
+    }) =>
+      api<IntegrationConnection>(`/api/integrations/${id}`, {
+        method: 'PATCH',
+        body: input,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: integrationKeys.all }),
+  });
+}
+
 export function useToolInvocations() {
   return useQuery({
     queryKey: integrationKeys.invocations(),
     queryFn: () => api<ToolInvocation[]>('/api/tools/invocations'),
+    retry: false,
+  });
+}
+
+export function useAgentTools(agentId: string) {
+  return useQuery({
+    queryKey: integrationKeys.tools(agentId),
+    queryFn: () => api<AgentTool[]>(`/api/tools/agents/${agentId}`),
+    enabled: Boolean(agentId),
     retry: false,
   });
 }
