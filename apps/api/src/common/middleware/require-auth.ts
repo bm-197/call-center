@@ -29,14 +29,20 @@ export async function requireAuth(
   }
 }
 
-type Role = 'owner' | 'admin' | 'agent' | 'viewer';
+type Role = 'owner' | 'admin' | 'member' | 'agent' | 'viewer';
 
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,
+  member: 1,
   agent: 1,
   admin: 2,
   owner: 3,
 };
+
+export function roleMeetsMinimum(memberRole: string, minRole: Role) {
+  const memberRank = ROLE_RANK[memberRole as Role] ?? -1;
+  return memberRank >= ROLE_RANK[minRole];
+}
 
 export function requireOrgMember(minRole: Role = 'viewer') {
   return async (req: Request, _res: Response, next: NextFunction) => {
@@ -54,8 +60,7 @@ export function requireOrgMember(minRole: Role = 'viewer') {
 
       if (!member) throw new AppError(403, 'Not a member of this organization');
 
-      const memberRank = ROLE_RANK[member.role as Role] ?? -1;
-      if (memberRank < ROLE_RANK[minRole]) {
+      if (!roleMeetsMinimum(member.role, minRole)) {
         throw new AppError(403, `Requires ${minRole} role or higher`);
       }
 

@@ -165,10 +165,22 @@ function AcceptInviteInner() {
       setPhase({ kind: 'ready', invitation: phase.invitation });
       return;
     }
+    const { error: activeOrgError } = await authClient.organization.setActive({
+      organizationId: phase.invitation.organizationId,
+    });
+    if (activeOrgError) {
+      acceptingInvitationIdRef.current = null;
+      toast.error(
+        activeOrgError.message ??
+          "You've joined, but we couldn't open that workspace",
+      );
+      setPhase({ kind: 'accepted', invitation: phase.invitation });
+      return;
+    }
     setPhase({ kind: 'accepted', invitation: phase.invitation });
     toast.success("You've joined the organization");
     setTimeout(() => {
-      router.push('/dashboard');
+      router.replace('/dashboard');
       router.refresh();
     }, 800);
   }
@@ -249,9 +261,10 @@ function Body({
         title="Invitation already accepted"
         description={`You're already a member of ${phase.invitation.organizationName ?? 'this organization'}. Open your dashboard to continue.`}
         cta={
-          <Button asChild className={invitePrimaryButtonClass}>
-            <Link href="/dashboard">Go to dashboard</Link>
-          </Button>
+          <OpenWorkspaceButton
+            organizationId={phase.invitation.organizationId}
+            label="Go to dashboard"
+          />
         }
       />
     );
@@ -386,6 +399,42 @@ function Body({
         </p>
       </CardFooter>
     </Card>
+  );
+}
+
+function OpenWorkspaceButton({
+  organizationId,
+  label,
+}: {
+  organizationId: string;
+  label: string;
+}) {
+  const router = useRouter();
+  const [opening, setOpening] = useState(false);
+
+  async function openWorkspace() {
+    setOpening(true);
+    const { error } = await authClient.organization.setActive({
+      organizationId,
+    });
+    if (error) {
+      setOpening(false);
+      toast.error(error.message ?? "Couldn't open that workspace");
+      return;
+    }
+    router.replace('/dashboard');
+    router.refresh();
+  }
+
+  return (
+    <Button
+      type="button"
+      className={invitePrimaryButtonClass}
+      onClick={openWorkspace}
+      disabled={opening}
+    >
+      {opening ? 'Opening…' : label}
+    </Button>
   );
 }
 

@@ -30,7 +30,16 @@ export default async function DashboardLayout({
     getActiveOrganization(),
     listOrganizations(),
   ]);
-  const organizationId = org?.id ?? session.session.activeOrganizationId;
+  if (orgs.length === 0) redirect('/onboarding');
+
+  const activeOrgStillAccessible = orgs.some(
+    (candidate) => candidate.id === session.session.activeOrganizationId,
+  );
+  if (!org || !activeOrgStillAccessible) {
+    return <ResolveActiveOrg organizationId={orgs[0].id} />;
+  }
+
+  const organizationId = org.id;
 
   return (
     <div className="bg-background min-h-screen">
