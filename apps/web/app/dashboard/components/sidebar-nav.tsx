@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   DashboardSquare01Icon,
@@ -17,9 +19,10 @@ import {
   Plug01Icon,
   Settings02Icon,
   Logout03Icon,
+  ArrowDown01Icon,
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
-import { signOut } from '@/lib/auth-client';
+import { organization, signOut } from '@/lib/auth-client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +34,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const sections: {
   label: string;
@@ -83,50 +94,152 @@ const sections: {
   },
 ];
 
+type SidebarOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+};
+
 export function SidebarNav({
   user,
   orgName,
   orgLogo,
+  activeOrganizationId,
+  organizations,
 }: {
   user: { name: string | null; email: string };
   orgName: string;
   orgLogo: string | null;
+  activeOrganizationId: string | null;
+  organizations: SidebarOrganization[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [logoFailed, setLogoFailed] = useState(false);
-  const logoSrc: string | null = !logoFailed && orgLogo ? orgLogo : null;
+  const [failedLogoSrc, setFailedLogoSrc] = useState<string | null>(null);
+  const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null);
+  const activeOrg = organizations.find(
+    (org) => org.id === activeOrganizationId,
+  );
+  const displayOrgName = activeOrg?.name ?? orgName;
+  const displayOrgLogo = activeOrg?.logo ?? orgLogo;
+  const logoSrc: string | null =
+    displayOrgLogo && failedLogoSrc !== displayOrgLogo ? displayOrgLogo : null;
   const showLogo = Boolean(logoSrc);
-  const initials = orgName.slice(0, 2).toUpperCase();
+  const initials = getInitials(displayOrgName);
+
+  async function switchOrganization(organizationId: string) {
+    if (organizationId === activeOrganizationId || switchingOrgId) return;
+
+    setSwitchingOrgId(organizationId);
+    const { error } = await organization.setActive({ organizationId });
+
+    if (error) {
+      setSwitchingOrgId(null);
+      toast.error(error.message ?? 'Failed to switch workspace');
+      return;
+    }
+
+    queryClient.clear();
+    router.refresh();
+    setSwitchingOrgId(null);
+  }
 
   return (
     <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r md:flex">
       <div className="px-4 py-5">
-        <div className="flex items-center gap-2">
-          <div className="text-sidebar-primary-foreground relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-md text-sm font-semibold">
-            {showLogo ? (
-              <Image
-                src={logoSrc as string}
-                alt={`${orgName} logo`}
-                width={32}
-                height={32}
-                unoptimized
-                className="h-8 w-8 object-contain p-1"
-                onError={() => setLogoFailed(true)}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="hover:bg-sidebar-accent/60 focus-visible:ring-sidebar-ring flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+            >
+              <OrganizationMark
+                name={displayOrgName}
+                logoSrc={logoSrc}
+                showLogo={showLogo}
+                initials={initials}
+                onLogoError={() => setFailedLogoSrc(logoSrc)}
               />
-            ) : (
-              <span className="text-sidebar-accent-foreground">{initials}</span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{orgName}</div>
-            <div className="text-sidebar-foreground/60 truncate text-xs">
-              Call Center
-            </div>
-          </div>
-        </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {displayOrgName}
+                </div>
+                <div className="text-sidebar-foreground/60 truncate text-xs">
+                  Call Center
+                </div>
+              </div>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={15}
+                strokeWidth={1.8}
+                className="text-sidebar-foreground/55"
+              />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="start">
+            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {organizations.map((org) => {
+              const active = org.id === activeOrganizationId;
+              const switching = switchingOrgId === org.id;
+
+              return (
+                <DropdownMenuItem
+                  key={org.id}
+                  disabled={Boolean(switchingOrgId)}
+                  onSelect={(event) => {
+                    if (active) {
+                      event.preventDefault();
+                      return;
+                    }
+                    void switchOrganization(org.id);
+                  }}
+                  className={cn(
+                    'gap-2.5',
+                    active && 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  <OrganizationMark
+                    name={org.name}
+                    logoSrc={org.logo}
+                    showLogo={Boolean(org.logo)}
+                    initials={getInitials(org.name)}
+                    size="sm"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate">{org.name}</div>
+                    <div className="text-muted-foreground truncate text-xs">
+                      {active ? 'Current workspace' : org.slug}
+                    </div>
+                  </div>
+                  {switching && (
+                    <span className="text-muted-foreground text-xs">
+                      Switching…
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/onboarding" className="gap-2.5">
+                <span className="bg-primary/10 text-primary flex h-7 w-7 items-center justify-center rounded-md text-lg leading-none">
+                  +
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div>Create organization</div>
+                  <div className="text-muted-foreground truncate text-xs">
+                    Add another workspace
+                  </div>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-2">
@@ -221,4 +334,50 @@ export function SidebarNav({
       </AlertDialog>
     </aside>
   );
+}
+
+function OrganizationMark({
+  name,
+  logoSrc,
+  showLogo,
+  initials,
+  onLogoError,
+  size = 'md',
+}: {
+  name: string;
+  logoSrc: string | null;
+  showLogo: boolean;
+  initials: string;
+  onLogoError?: () => void;
+  size?: 'sm' | 'md';
+}) {
+  const dimension = size === 'sm' ? 28 : 32;
+  const className = size === 'sm' ? 'h-7 w-7' : 'h-8 w-8';
+
+  return (
+    <div
+      className={cn(
+        'text-sidebar-primary-foreground relative flex shrink-0 items-center justify-center overflow-hidden rounded-md text-sm font-semibold',
+        className,
+      )}
+    >
+      {showLogo && logoSrc ? (
+        <Image
+          src={logoSrc}
+          alt={`${name} logo`}
+          width={dimension}
+          height={dimension}
+          unoptimized
+          className={cn('object-contain p-1', className)}
+          onError={onLogoError}
+        />
+      ) : (
+        <span className="text-sidebar-accent-foreground">{initials}</span>
+      )}
+    </div>
+  );
+}
+
+function getInitials(name: string) {
+  return name.trim().slice(0, 2).toUpperCase() || 'CC';
 }
