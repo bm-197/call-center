@@ -6,7 +6,7 @@
 ;   ASTERISK_PUBLIC_IP       VPS public IPv4 (set in .env.production)
 ;   EXT_1001_PASSWORD        SIP secret for softphone 1001
 ;   EXT_1002_PASSWORD        SIP secret for softphone 1002
-;   EXT_2001_PASSWORD        SIP secret for the human-agent WebRTC endpoint
+;   EXT_2001_PASSWORD        SIP secret for the human-agent softphone endpoint
 
 ; ─── Transports ───
 ;
@@ -117,7 +117,7 @@ default_expiration = 120
 maximum_expiration = 300
 
 ;
-; Extension 2001 — human agent (WebRTC)
+; Extension 2001 — human agent handoff softphone
 ;
 [2001]
 type = endpoint
@@ -129,7 +129,6 @@ allow = alaw
 auth = 2001
 aors = 2001
 direct_media = no
-webrtc = yes
 rtp_symmetric = yes
 force_rport = yes
 rewrite_contact = yes
