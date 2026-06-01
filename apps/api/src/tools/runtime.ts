@@ -1,6 +1,8 @@
 import { prisma, Prisma } from '@call-center/db';
 import {
   CONFIRM_TOOL_NAME,
+  buildConfiguredToolDefinition,
+  configuredToolEntries,
   getToolDefinition,
   toolDefinitions,
   toFunctionDeclaration,
@@ -24,6 +26,12 @@ type ExecuteOptions = {
   confirmationId?: string;
 };
 
+type IntegrationToolConfig = {
+  provider: string;
+  config: Prisma.JsonValue | null;
+  updatedAt: Date;
+};
+
 export async function getEnabledToolDefinitions(opts: {
   organizationId: string;
   agentId: string;
@@ -35,8 +43,11 @@ export async function getEnabledToolDefinitions(opts: {
     },
   });
   const grantByTool = new Map(grants.map((grant) => [grant.toolName, grant]));
+  const availableTools = await getOrganizationToolDefinitions(
+    opts.organizationId,
+  );
 
-  const enabled = toolDefinitions.filter((tool) => {
+  const enabled = availableTools.filter((tool) => {
     if (tool.name === CONFIRM_TOOL_NAME) return true;
     const grant = grantByTool.get(tool.name);
     if (grant) return grant.status === 'enabled';
@@ -71,8 +82,11 @@ export async function listToolsForAgent(opts: {
     orderBy: { toolName: 'asc' },
   });
   const grantByTool = new Map(grants.map((grant) => [grant.toolName, grant]));
+  const availableTools = await getOrganizationToolDefinitions(
+    opts.organizationId,
+  );
 
-  return toolDefinitions.map((tool) => {
+  return availableTools.map((tool) => {
     const grant = grantByTool.get(tool.name);
     const enabled =
       tool.name === CONFIRM_TOOL_NAME
@@ -105,7 +119,10 @@ export async function setAgentToolGrant(opts: {
   if (opts.toolName === CONFIRM_TOOL_NAME) {
     throw new ToolExecutionError('The confirmation tool cannot be disabled');
   }
-  const tool = getToolDefinition(opts.toolName);
+  const tool = await getOrganizationToolDefinition(
+    opts.organizationId,
+    opts.toolName,
+  );
   if (!tool) throw new ToolExecutionError('Unknown tool', 'unknown_tool');
 
   return prisma.agentToolGrant.upsert({
@@ -143,7 +160,10 @@ export async function executeTool(
     return executeConfirmTool(args ?? {}, context);
   }
 
-  const tool = getToolDefinition(name);
+  const tool = await getOrganizationToolDefinition(
+    context.organizationId,
+    name,
+  );
   if (!tool)
     throw new ToolExecutionError(`Unknown tool: ${name}`, 'unknown_tool');
 
@@ -390,18 +410,11 @@ async function runToolHandler(
   args: unknown,
   context: ToolExecutionContext,
 ): Promise<Record<string, unknown>> {
-  switch (name) {
-    case 'waitlist_add_contact':
-    case 'contact_update_notes':
-    case 'calendar_create_event':
-      return executeExternalTool(
-        name,
-        args as Parameters<typeof executeExternalTool>[1],
-        context,
-      );
-    default:
-      throw new ToolExecutionError(`Unknown tool: ${name}`, 'unknown_tool');
-  }
+  return executeExternalTool(
+    name,
+    args as Parameters<typeof executeExternalTool>[1],
+    context,
+  );
 }
 
 async function isToolEnabled(
@@ -409,7 +422,10 @@ async function isToolEnabled(
   context: ToolExecutionContext,
 ): Promise<boolean> {
   if (toolName === CONFIRM_TOOL_NAME) return true;
-  const tool = getToolDefinition(toolName);
+  const tool = await getOrganizationToolDefinition(
+    context.organizationId,
+    toolName,
+  );
   if (!tool) return false;
   const grant = await prisma.agentToolGrant.findUnique({
     where: {
@@ -421,6 +437,85 @@ async function isToolEnabled(
   });
   if (grant) return grant.status === 'enabled';
   return tool.defaultEnabled;
+}
+
+async function getOrganizationToolDefinition(
+  organizationId: string,
+  toolName: string,
+): Promise<ToolDefinition | undefined> {
+  const definitions = await getOrganizationToolDefinitions(organizationId);
+  return definitions.find((tool) => tool.name === toolName);
+}
+
+async function getOrganizationToolDefinitions(
+  organizationId: string,
+): Promise<ToolDefinition[]> {
+  const byName = new Map<string, ToolDefinition>(
+    toolDefinitions.map((tool) => [tool.name, tool]),
+  );
+
+  const integrations = await prisma.integrationConnection.findMany({
+    where: {
+      organizationId,
+      status: 'active',
+      provider: { in: ['custom_api', 'notion', 'google_calendar'] },
+    },
+    select: {
+      provider: true,
+      config: true,
+      updatedAt: true,
+    },
+    orderBy: { updatedAt: 'asc' },
+  });
+
+  for (const integration of integrations.sort(compareIntegrationToolConfig)) {
+    applyConfiguredIntegrationTools(byName, integration);
+  }
+
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function applyConfiguredIntegrationTools(
+  byName: Map<string, ToolDefinition>,
+  integration: IntegrationToolConfig,
+) {
+  for (const [toolName, toolConfig] of configuredToolEntries(
+    integration.config,
+  )) {
+    if (
+      integration.provider === 'google_calendar' &&
+      toolName !== 'calendar_create_event'
+    ) {
+      continue;
+    }
+
+    const base = byName.get(toolName);
+    const definition = buildConfiguredToolDefinition({
+      name: toolName,
+      provider: integration.provider,
+      config: toolConfig,
+      ...(base ? { base } : {}),
+    });
+    if (definition) byName.set(toolName, definition);
+  }
+}
+
+function compareIntegrationToolConfig(
+  a: IntegrationToolConfig,
+  b: IntegrationToolConfig,
+): number {
+  const providerDelta =
+    integrationDefinitionRank(a.provider) -
+    integrationDefinitionRank(b.provider);
+  if (providerDelta !== 0) return providerDelta;
+  return a.updatedAt.getTime() - b.updatedAt.getTime();
+}
+
+function integrationDefinitionRank(provider: string): number {
+  if (provider === 'notion') return 0;
+  if (provider === 'custom_api') return 1;
+  if (provider === 'google_calendar') return 2;
+  return 0;
 }
 
 async function markPendingConfirmation(

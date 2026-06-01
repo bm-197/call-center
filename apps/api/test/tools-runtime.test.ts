@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prisma } from '@call-center/db';
-import { executeTool } from '../src/tools/runtime.js';
+import {
+  executeTool,
+  getEnabledToolDefinitions,
+  getGeminiToolConfig,
+} from '../src/tools/runtime.js';
 import { cleanupAll, signUpWithOrg } from './helpers.js';
 
 const cleanupEmails: string[] = [];
@@ -85,6 +89,134 @@ describe('tool runtime external integrations', () => {
         },
       }),
     ).toBe(1);
+  });
+
+  it('exposes org-defined custom API tools to the model and executes them', async () => {
+    const user = await signUpWithOrg();
+    cleanupEmails.push(user.email);
+
+    const agent = await prisma.agent.create({
+      data: {
+        organizationId: user.orgId,
+        name: 'Dynamic Tool Agent',
+        status: 'active',
+      },
+    });
+    await prisma.integrationConnection.create({
+      data: {
+        organizationId: user.orgId,
+        provider: 'custom_api',
+        name: 'support-api',
+        status: 'active',
+        config: {
+          tools: {
+            create_support_ticket: {
+              title: 'Create support ticket',
+              description:
+                'Open a support ticket when the caller reports an issue.',
+              requiresConfirmation: true,
+              inputSchema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  customerName: { type: 'string' },
+                  phoneNumber: { type: 'string' },
+                  issue: { type: 'string' },
+                  priority: {
+                    type: 'string',
+                    enum: ['low', 'normal', 'high'],
+                  },
+                },
+                required: ['issue'],
+              },
+              url: 'https://support.example.test/tickets',
+            },
+          },
+        },
+        credentials: { bearerToken: 'support-token' },
+      },
+    });
+
+    const enabledTools = await getEnabledToolDefinitions({
+      organizationId: user.orgId,
+      agentId: agent.id,
+    });
+    const dynamicTool = enabledTools.find(
+      (tool) => tool.name === 'create_support_ticket',
+    );
+    expect(dynamicTool).toMatchObject({
+      title: 'Create support ticket',
+      description: 'Open a support ticket when the caller reports an issue.',
+      requiresConfirmation: true,
+    });
+
+    const geminiTools = await getGeminiToolConfig({
+      organizationId: user.orgId,
+      agentId: agent.id,
+    });
+    expect(geminiTools[0]?.functionDeclarations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'create_support_ticket',
+          parametersJsonSchema: expect.objectContaining({
+            required: ['issue'],
+          }),
+        }),
+      ]),
+    );
+
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ticketId: 'ticket-1' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await executeTool(
+      'create_support_ticket',
+      {
+        customerName: 'Sara',
+        phoneNumber: '911100100',
+        issue: 'Delivery did not arrive',
+        priority: 'high',
+      },
+      {
+        organizationId: user.orgId,
+        agentId: agent.id,
+        source: 'api',
+        actorId: user.userId,
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: 'executed',
+      externalProvider: 'custom_api',
+      externalStatusCode: 201,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://support.example.test/tickets',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.any(Headers),
+        body: expect.any(String),
+      }),
+    );
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body),
+    ) as {
+      toolName: string;
+      arguments: Record<string, unknown>;
+    };
+    expect(requestBody).toMatchObject({
+      toolName: 'create_support_ticket',
+      arguments: {
+        issue: 'Delivery did not arrive',
+        priority: 'high',
+      },
+    });
   });
 
   it('maps waitlist tool fields into Notion database columns', async () => {
