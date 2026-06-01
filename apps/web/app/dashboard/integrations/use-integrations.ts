@@ -50,6 +50,19 @@ export type ToolInvocation = {
   updatedAt: string;
 };
 
+export type AgentTool = {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  defaultEnabled: boolean;
+  requiresConfirmation: boolean;
+  enabled: boolean;
+  grantId: string | null;
+  config: unknown;
+};
+
 export type ToolInvocationListParams = {
   page?: number;
   pageSize?: number;
@@ -70,6 +83,8 @@ export const integrationKeys = {
   list: () => [...integrationKeys.all, 'list'] as const,
   invocations: (params?: ToolInvocationListParams) =>
     [...integrationKeys.all, 'invocations', params] as const,
+  tools: (agentId: string) =>
+    [...integrationKeys.all, 'tools', agentId] as const,
 };
 
 function buildInvocationQuery(params: ToolInvocationListParams | undefined) {
@@ -126,6 +141,15 @@ export function useToolInvocations(params?: ToolInvocationListParams) {
         `/api/tools/invocations${buildInvocationQuery(params)}`,
       ),
     placeholderData: (previous) => previous,
+    retry: false,
+  });
+}
+
+export function useAgentTools(agentId: string) {
+  return useQuery({
+    queryKey: integrationKeys.tools(agentId),
+    queryFn: () => api<AgentTool[]>(`/api/tools/agents/${agentId}`),
+    enabled: Boolean(agentId),
     retry: false,
   });
 }

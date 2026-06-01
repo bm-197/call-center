@@ -35,6 +35,13 @@ export type ToolDefinition<TInput = unknown> = {
   handler: ToolHandler<TInput>;
 };
 
+export type ConfiguredToolOptions = {
+  name: string;
+  provider: string;
+  config: unknown;
+  base?: ToolDefinition;
+};
+
 const waitlistInput = z.object({
   name: z.string().min(1).max(160).optional(),
   phoneNumber: z.string().min(3).max(40).optional(),
@@ -244,6 +251,77 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
   return toolDefinitions.find((tool) => tool.name === name);
 }
 
+const dynamicToolSchema = z.record(z.string(), z.unknown());
+const toolNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const defaultDynamicInputSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {},
+} satisfies JsonSchema;
+
+export function isValidToolName(name: string): boolean {
+  return toolNamePattern.test(name);
+}
+
+export function configuredToolEntries(
+  integrationConfig: unknown,
+): Array<[string, unknown]> {
+  const config = jsonObject(integrationConfig);
+  const tools = config.tools;
+  if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return [];
+  return Object.entries(tools).filter(([name]) => isValidToolName(name));
+}
+
+export function buildConfiguredToolDefinition(
+  opts: ConfiguredToolOptions,
+): ToolDefinition | null {
+  if (!isValidToolName(opts.name)) return null;
+
+  const config = jsonObject(opts.config);
+  const title =
+    stringValue(config.title) ??
+    opts.base?.title ??
+    humanizeToolName(opts.name);
+  const description =
+    stringValue(config.description) ??
+    opts.base?.description ??
+    `Call the connected ${providerLabel(opts.provider)} integration for ${title}.`;
+  const inputSchema =
+    jsonSchemaValue(config.inputSchema) ??
+    opts.base?.inputSchema ??
+    defaultDynamicInputSchema;
+  const outputSchema =
+    jsonSchemaValue(config.outputSchema) ?? opts.base?.outputSchema;
+  const defaultEnabled =
+    booleanValue(config.defaultEnabled) ?? opts.base?.defaultEnabled ?? true;
+  const requiresConfirmation =
+    booleanValue(config.requiresConfirmation) ??
+    opts.base?.requiresConfirmation ??
+    true;
+  const prompt = stringValue(config.confirmationPrompt);
+
+  return {
+    name: opts.name,
+    title,
+    description,
+    inputSchema,
+    ...(outputSchema ? { outputSchema } : {}),
+    schema: opts.base?.schema ?? dynamicToolSchema,
+    defaultEnabled,
+    requiresConfirmation,
+    ...(prompt
+      ? { confirmationPrompt: () => prompt }
+      : opts.base?.confirmationPrompt
+        ? { confirmationPrompt: opts.base.confirmationPrompt }
+        : {}),
+    handler:
+      opts.base?.handler ??
+      (async () => {
+        throw new Error(`${opts.name} handler is not attached`);
+      }),
+  };
+}
+
 export function toFunctionDeclaration(
   tool: ToolDefinition,
 ): FunctionDeclaration {
@@ -267,3 +345,38 @@ export function toAgentAuthCapability(tool: ToolDefinition): Capability {
 }
 
 export const agentAuthCapabilities = toolDefinitions.map(toAgentAuthCapability);
+
+function jsonObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function jsonSchemaValue(value: unknown): JsonSchema | null {
+  const object = jsonObject(value);
+  if (Object.keys(object).length === 0) return null;
+  return object;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function humanizeToolName(name: string): string {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
+}
+
+function providerLabel(provider: string): string {
+  if (provider === 'custom_api') return 'custom API';
+  if (provider === 'google_calendar') return 'Google Calendar';
+  return provider.replaceAll('_', ' ');
+}
