@@ -737,13 +737,26 @@ async function assertHandoffEndpointReachable(
 
   const resource = parsed[1];
   if (!resource) return;
-  const info = await client.endpoints.get({ tech: 'PJSIP', resource });
-  if (!info.state || info.state === 'offline') {
-    throw new AppError(
-      409,
-      `Human endpoint ${endpoint} is not registered. Open the softphone for extension ${resource} and wait until Asterisk shows it as reachable.`,
+  try {
+    const info = await client.endpoints.get({ tech: 'PJSIP', resource });
+    if (info.state === 'offline') {
+      const message = `Human endpoint ${endpoint} is offline according to ARI; attempting originate anyway because mobile SIP qualify can be stale.`;
+      if (process.env.HANDOFF_STRICT_ENDPOINT_CHECK === 'true') {
+        throw new AppError(
+          409,
+          `Human endpoint ${endpoint} is not registered. Open the softphone for extension ${resource} and wait until Asterisk shows it as reachable.`,
+        );
+      }
+      console.warn(`[orchestrator] ${message}`);
+    }
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    console.warn(
+      `[orchestrator] could not verify ${endpoint} with ARI; attempting originate anyway:`,
+      err,
     );
   }
+
 }
 
 function handoffDialTimeoutSeconds(): number {
